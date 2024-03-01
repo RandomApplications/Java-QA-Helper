@@ -1,0 +1,28 @@
+# Ignore from macOS:
+.DS_Store
+
+# Ignore file types in any location:
+*.mf
+*.zip
+*.icns
+*.ico
+*.svg
+*.ids
+
+# Ignore if name starts with in any location:
+OLD-*
+hdsentinel-*
+
+# Ignore specific project folder:
+build/
+dist/
+libs/
+nbproject/
+test/
+Universal Binary Parts/
+Licenses/
+Twemoji/
+
+# Ignore specific private source files:
+PCsCRMManager.java
+PrivateStrings.java

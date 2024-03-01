@@ -1,0 +1,53 @@
+#!/bin/bash
+# shellcheck enable=add-default-case,avoid-nullary-conditions,check-unassigned-uppercase,deprecate-which,quote-safe-variables,require-double-brackets
+
+#
+# Created by Pico Mitchell (of Free Geek) on 03/26/19
+# For QA Helper
+# Last Updated: 01/09/23
+#
+# MIT License
+#
+# Copyright (c) 2019 Free Geek
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+# WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+
+
+##########################################################################
+#                                                                        #
+#  TO INSTALL QA HELPER, YOU SHOULD SELECT "RUN" WHEN OPENING THIS FILE  #
+#                                                                        #
+#         OR, YOU CAN EXECUTE THIS FILE MANUALLY FROM A TERMINAL         #
+#                                                                        #
+##########################################################################
+
+
+readonly ACTUALLY_INSTALL_SCRIPT="echo -e 'PREPARING TO INSTALL QA HELPER (INTERNET IS REQUIRED)\n'
+for install_qa_helper_attempt in {1..5}; do
+    actually_install_script_contents=\"\$(curl -m 5 -sfL 'https://apps.freegeek.org/qa-helper/download/actually-install-qa-helper.sh')\"
+    if [[ \"\${actually_install_script_contents}\" == *'qa-helper'* ]]; then
+        echo \"\${actually_install_script_contents}\" | bash -s -- '$1'
+        break
+    else
+        echo 'FAILED TO DOWNLOAD ACTUAL QA HELPER INSTALLER (INTERNET IS REQUIRED)'
+        if (( install_qa_helper_attempt < 5 )); then
+            echo 'ATTEMPING DOWNLOAD AGAIN...'
+            sleep \"\${install_qa_helper_attempt}\"
+        fi
+    fi
+done"
+
+if [[ "$(uname)" == 'Darwin' ]]; then
+    bash -c "${ACTUALLY_INSTALL_SCRIPT}"
+else
+    $([[ -f '/usr/bin/mate-terminal' ]] && echo 'mate-terminal --window' || echo 'gnome-terminal --window-with-profile-internal-id "0"') --title 'Installing QA Helper' --hide-menubar --geometry '80x25+0+0' -x bash -c "${ACTUALLY_INSTALL_SCRIPT}; echo -e '\nPRESS ENTER TO CLOSE THIS WINDOW'; read -r" &> /dev/null
+fi

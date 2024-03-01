@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.11.6</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleAllowMixedLocalizations</key>
+	<true/>
+	<key>CFBundleExecutable</key>
+	<string>QA Helper</string>
+	<key>CFBundleIconFile</key>
+	<string>QA Helper.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.freegeek.QA-Helper</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>QA Helper</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleSignature</key>
+	<string>QAhl</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2024 PCs for People &amp; Free Geek
+
+App Icon is “Robot Face” from Twemoji by Twitter licensed under CC-BY 4.0</string>
+	<key>NSHighResolutionCapable</key>
+	<string>true</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>You must allow QA Helper to access to this computers microphone to be able test this computers microphone.</string>
+	<key>LSMultipleInstancesProhibited</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>You must allow QA Helper to control and perform actions in QuickTime to be able test this computers microphone.</string>
+</dict>
+</plist>
