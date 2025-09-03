@@ -11,7 +11,9 @@
 	<key>CFBundleExecutable</key>
 	<string>QA Helper</string>
 	<key>CFBundleIconFile</key>
-	<string>QA Helper.icns</string>
+	<string>QA Helper</string>
+	<key>CFBundleIconName</key>
+	<string>QA Helper</string>
 	<key>CFBundleIdentifier</key>
 	<string>org.freegeek.QA-Helper</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -27,7 +29,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2024 PCs for People &amp; Free Geek
+	<string>Copyright © 2025 PCs for People &amp; Free Geek
 
 App Icon is “Robot Face” from Twemoji by Twitter licensed under CC-BY 4.0</string>
 	<key>NSHighResolutionCapable</key>
@@ -38,5 +40,7 @@ App Icon is “Robot Face” from Twemoji by Twitter licensed under CC-BY 4.0</s
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>You must allow QA Helper to control and perform actions in QuickTime to be able test this computers microphone.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>You must allow QA Helper to access the local network to print to local network printers.</string>
 </dict>
 </plist>

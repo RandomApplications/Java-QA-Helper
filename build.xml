@@ -83,10 +83,10 @@
     <target name="-post-jar">
         <!-- https://stackoverflow.com/questions/18451052/how-to-include-jars-in-lib-into-project-jar-file-in-netbeans -->
         
-        <property name="store.jar.name" value="QA_Helper"/>
+        <property name="store.jar.name" value="QA_Helper.jar"/>
         <property name="store.dir" value="dist"/>
         <property name="temp.dir" value="temp"/>
-        <property name="store.jar" value="${store.dir}/${store.jar.name}.jar"/>
+        <property name="store.jar" value="${store.dir}/${store.jar.name}"/>
         
         <echo message="Packaging ${application.title} into a single JAR at ${store.jar} and zipping"/>
         
@@ -98,6 +98,7 @@
             <zipgroupfileset dir="libs" includes="*.jar"/>
             <manifest>
                 <attribute name="Main-Class" value="${main.class}"/>
+                <attribute name="Enable-Native-Access" value="ALL-UNNAMED"/>
             </manifest>
         </jar>
 
@@ -109,36 +110,36 @@
         
         <delete dir="${temp.dir}"/>
         
-        <zip basedir="${store.dir}" destfile="${store.dir}/QAHelper-jar.zip" includes="${store.jar.name}.jar"/>
+        <zip basedir="${store.dir}" destfile="${store.dir}/QAHelper-jar.zip" includes="${store.jar.name}"/>
         
         <!-- Create jar for Linux with excludes unnecessary resources -->
-        <echo message="Compressing ${store.jar.name}.jar for Linux and zipping"/>
+        <echo message="Compressing ${store.jar.name} for Linux and zipping"/>
         <mkdir dir="${store.dir}/JAR for Linux"/>
-        <zip destfile="${store.dir}/JAR for Linux/${store.jar.name}.jar">
+        <zip destfile="${store.dir}/JAR for Linux/${store.jar.name}">
             <zipfileset src="${store.jar}" excludes="Resources/product-key-from-registry.vbs, Resources/qa-helper-icon.ico, Resources/usb.ids"/>
         </zip>
-        <zip basedir="${store.dir}/JAR for Linux" destfile="${store.dir}/QAHelper-linux-jar.zip" includes="${store.jar.name}.jar"/>
+        <zip basedir="${store.dir}/JAR for Linux" destfile="${store.dir}/QAHelper-linux-jar.zip" includes="${store.jar.name}"/>
         <delete dir="${store.dir}/JAR for Linux"/>
         
         <!-- Create jar for Windows with excludes unnecessary resources -->
-        <echo message="Compressing ${store.jar.name}.jar for Windows and zipping"/>
+        <echo message="Compressing ${store.jar.name} for Windows and zipping"/>
         <mkdir dir="${store.dir}/JAR for Windows"/>
-        <zip destfile="${store.dir}/JAR for Windows/${store.jar.name}.jar">
+        <zip destfile="${store.dir}/JAR for Windows/${store.jar.name}">
             <zipfileset src="${store.jar}" excludes="Resources/hdsentinel-020-x64, Resources/qa-helper-icon.svg, Resources/undo-oem-config-prepare.sh"/>
         </zip>
-        <zip basedir="${store.dir}/JAR for Windows" destfile="${store.dir}/QAHelper-windows-jar.zip" includes="${store.jar.name}.jar"/>
+        <zip basedir="${store.dir}/JAR for Windows" destfile="${store.dir}/QAHelper-windows-jar.zip" includes="${store.jar.name}"/>
         <delete dir="${store.dir}/JAR for Windows"/>
         
         <!-- Create jar for macOS with excludes unnecessary resources -->
-        <echo message="Compressing ${store.jar.name}.jar for macOS"/>
+        <echo message="Compressing ${store.jar.name} for macOS"/>
         <mkdir dir="${store.dir}/JAR for macOS"/>
-        <zip destfile="${store.dir}/JAR for macOS/${store.jar.name}.jar">
+        <zip destfile="${store.dir}/JAR for macOS/${store.jar.name}">
             <zipfileset src="${store.jar}" excludes="Resources/hdsentinel-020-x64, Resources/pci.ids, Resources/product-key-from-registry.vbs, Resources/qa-helper-icon.ico, Resources/qa-helper-icon.svg, Resources/undo-oem-config-prepare.sh, Resources/usb.ids"/>
         </zip>
         <!-- Do not zip or delete macOS jar, the following compile script uses it and then cleans up -->
         
         <!-- Compile jar for macOS into macOS App bundle -->
-        <echo message="Compiling ${store.jar.name}.jar into App for macOS"/>
+        <echo message="Compiling ${store.jar.name} into App for macOS"/>
         <exec executable="./Build Scripts/Compile QA Helper for Mac.sh"/>
     </target>
 </project>

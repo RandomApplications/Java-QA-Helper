@@ -63,7 +63,7 @@ public class SOAPParse {
     public ArrayList<HashMap<String, String>> parseDataset(String xml) {
         /**
          * ********************************************************************
-         * This method converts an XML file that contains a DataSet with several responses to a set of elements, like "PID History" the I use as keys or "headers" in a HashMap for each XML response in the set.
+         * This method converts an XML file that contains a DataSet with several responses to a set of elements, like "Status History" the I use as keys or "headers" in a HashMap for each XML response in the set.
          *
          * The layout is as follows: Array[0] = HashMap1 HashMap1[Header1] = value 1 for Entry 1 HashMap1[Header2] = value 2 for Entry 1 Array[1] = HashMap2 HashMap2[Header1] = value 1 for Entry 2 HashMap2[Header2]
          *
@@ -71,7 +71,7 @@ public class SOAPParse {
          */
         String[] xmlLines = xml.split("><");
 
-        ArrayList<String> headers = new ArrayList<>();
+        ArrayList<String> columns = new ArrayList<>();
         ArrayList<HashMap<String, String>> parsedData = new ArrayList<>();
 
         boolean collectingHeader = true;
@@ -79,7 +79,7 @@ public class SOAPParse {
         for (String thisXMLLine : xmlLines) {
             if (collectingHeader) {
                 if (thisXMLLine.startsWith("xs:element") && thisXMLLine.contains("type=\"xs:")) {
-                    headers.add(thisXMLLine.substring(thisXMLLine.indexOf("\"") + 1, thisXMLLine.indexOf("\" type=")));
+                    columns.add(thisXMLLine.substring(thisXMLLine.indexOf("\"") + 1, thisXMLLine.indexOf("\" type=")));
                 } else if (thisXMLLine.equals("/xs:sequence")) {
                     collectingHeader = false;
                 }
@@ -90,9 +90,9 @@ public class SOAPParse {
                 }
 
                 if (collectingRowIndex >= 0) {
-                    for (String thisHeader : headers) {
-                        if (thisXMLLine.startsWith(thisHeader + ">") && thisXMLLine.endsWith("</" + thisHeader)) {
-                            parsedData.get(collectingRowIndex).put(thisHeader, thisXMLLine.substring(thisXMLLine.indexOf(">") + 1, thisXMLLine.lastIndexOf("</")));
+                    for (String thisColumn : columns) {
+                        if (thisXMLLine.startsWith(thisColumn + ">") && thisXMLLine.endsWith("</" + thisColumn)) {
+                            parsedData.get(collectingRowIndex).put(thisColumn, thisXMLLine.substring(thisXMLLine.indexOf(">") + 1, thisXMLLine.lastIndexOf("</")));
                         }
                     }
                 }

@@ -4,7 +4,7 @@
 #
 # Created by Pico Mitchell (of Free Geek) on 02/22/19
 # For QA Helper
-# Last Updated: 02/29/24
+# Last Updated: 7/21/25
 #
 # MIT License
 #
@@ -220,7 +220,7 @@ else # Installer for Linux
             if [[ -e "${install_dir}/java-jre/bin/java" ]]; then
                 echo -e '\n\nJAVA IS ALREADY INSTALLED\n'
             else
-                jdk_version='21.0.2+13'
+                jdk_version='21.0.8+9'
 
                 echo -e "\n\nINSTALLING JAVA ${jdk_version/_/+}...\n"
 
@@ -230,7 +230,7 @@ else # Installer for Linux
                 for java_download_attempt in {1..5}; do
                     rm -f '/tmp/qa-helper_java-jre.tar.gz' || sudo rm -rf '/tmp/qa-helper_java-jre.tar.gz'
                     echo 'DOWNLOADING JAVA:'
-                    
+
                     sudo -u "${install_user}" curl --connect-timeout 5 --progress-bar -fL "${jdk_download_url}" -o '/tmp/qa-helper_java-jre.tar.gz' || curl --connect-timeout 5 --progress-bar -fL "${jdk_download_url}" -o '/tmp/qa-helper_java-jre.tar.gz'
                     
                     if [[ -e '/tmp/qa-helper_java-jre.tar.gz' ]]; then
@@ -345,10 +345,13 @@ else # Installer for Linux
                     qa_helper_desktop_source="[Desktop Entry]\nVersion=1.0\nName=QA Helper\nGenericName=QA Helper\nComment=Launch QA Helper (App Icon is \"Robot Face\" from Twemoji by Twitter licensed under CC-BY 4.0)\nExec=${install_dir}/launch-qa-helper\nIcon=${icon_file_path}\nTerminal=false\nType=Application\nCategories=Utility;Application;"
                     echo -e "${qa_helper_desktop_source}" | sudo -u "${install_user}" tee '/tmp/qa-helper.desktop' > /dev/null || echo -e "${qa_helper_desktop_source}" > '/tmp/qa-helper.desktop'
 
-                    rm -f "${install_home}/.config/autostart/qa-helper.desktop" || sudo rm -f "${install_home}/.config/autostart/qa-helper.desktop"
-                    sudo -u "${install_user}" desktop-file-install --dir "${install_home}/.config/autostart/" '/tmp/qa-helper.desktop' || desktop-file-install --dir "${install_home}/.config/autostart/" '/tmp/qa-helper.desktop'
-                    echo 'X-GNOME-Autostart-Delay=10' | sudo -u "${install_user}" tee -a "${install_home}/.config/autostart/qa-helper.desktop" > /dev/null || echo 'X-GNOME-Autostart-Delay=10' >> "${install_home}/.config/autostart/qa-helper.desktop"
-                    sudo -u "${install_user}" chmod +x "${install_home}/.config/autostart/qa-helper.desktop" || chmod +x "${install_home}/.config/autostart/qa-helper.desktop"
+                    # Only setup autostart for OEM user.
+                    if { $TEST_MODE || [[ "${install_user}" == 'oem' ]]; }; then
+                        rm -f "${install_home}/.config/autostart/qa-helper.desktop" || sudo rm -f "${install_home}/.config/autostart/qa-helper.desktop"
+                        sudo -u "${install_user}" desktop-file-install --dir "${install_home}/.config/autostart/" '/tmp/qa-helper.desktop' || desktop-file-install --dir "${install_home}/.config/autostart/" '/tmp/qa-helper.desktop'
+                        echo 'X-GNOME-Autostart-Delay=10' | sudo -u "${install_user}" tee -a "${install_home}/.config/autostart/qa-helper.desktop" > /dev/null || echo 'X-GNOME-Autostart-Delay=10' >> "${install_home}/.config/autostart/qa-helper.desktop"
+                        sudo -u "${install_user}" chmod +x "${install_home}/.config/autostart/qa-helper.desktop" || chmod +x "${install_home}/.config/autostart/qa-helper.desktop"
+                    fi
 
                     rm -f "${install_home}/.local/share/applications/qa-helper.desktop" || sudo rm -f "${install_home}/.local/share/applications/qa-helper.desktop"
                     sudo -u "${install_user}" desktop-file-install --dir "${install_home}/.local/share/applications/" '/tmp/qa-helper.desktop' || desktop-file-install --dir "${install_home}/.local/share/applications/" '/tmp/qa-helper.desktop'

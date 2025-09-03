@@ -24,10 +24,10 @@ import java.awt.Font;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URISyntaxException;
 import java.time.Year;
+import java.util.ArrayList;
 import java.util.stream.Collectors;
 import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
@@ -46,7 +46,7 @@ public class QACreditsWindow extends javax.swing.JFrame {
     public QACreditsWindow() {
         initComponents();
 
-        setMinimumSize(UIScale.scale(getMinimumSize())); // Scale window minimum size by userScalingFactor for correct minimum size with HiDPI on Linux.
+        setMinimumSize(UIScale.scale(getMinimumSize())); // Scale window minimum size by userScaleFactor for correct minimum size with HiDPI on Linux.
 
         if (System.getProperty("os.name").startsWith("Windows") && (new File("\\Windows\\System32\\startnet.cmd").exists() || new File("\\Windows\\System32\\winpeshl.ini").exists()) && !new CommandReader(new String[]{"\\Windows\\System32\\reg.exe", "query", "HKLM\\SYSTEM\\Setup", "/v", "FactoryPreInstallInProgress"}).getFirstOutputLineContaining("0x1").isEmpty()) {
             setAlwaysOnTop(true); // Want all windows to be always on top in WinPE so they don't get lost behind full screen PowerShell window.
@@ -56,11 +56,9 @@ public class QACreditsWindow extends javax.swing.JFrame {
 
         String currentYear = Year.now().toString();
 
-        copyrightLabel.setText(copyrightLabel.getText().replace("[YEAR]", currentYear));
-
-        try {
-            versionLabel.setText("<html><b>Version:</b> " + new BufferedReader(new InputStreamReader(this.getClass().getResource("/Resources/qa-helper-version.txt").openStream())).readLine() + " (<b>Java:</b> " + System.getProperty("java.version") + ")</html>");
-        } catch (NullPointerException | IOException loadVersionException) {
+        try (BufferedReader appVersionReader = new BufferedReader(new InputStreamReader(this.getClass().getResource("/Resources/qa-helper-version.txt").openStream()))) {
+            versionLabel.setText("<html><b>Version:</b> " + appVersionReader.readLine() + " <span style=\"font-size: smaller\">(<b>Java:</b> " + System.getProperty("java.version") + ")</span></html>");
+        } catch (Exception loadVersionException) {
             versionLabel.setText("");
         }
 
@@ -80,8 +78,11 @@ public class QACreditsWindow extends javax.swing.JFrame {
                     String licenseHeader = "<b><i>UNKNOWN License</i></b>";
 
                     switch (licenseFilename) {
+                        case "QAHelper-MIT":
+                            licenseHeader = "<b>QA Helper</b> - <u>MIT License</u><br/>Copyright &copy; 2018 PCs for People<br/>Copyright &copy; 2018-" + currentYear + " Free Geek";
+                            break;
                         case "Twemoji-CCBY4":
-                            licenseHeader = "<b>App &amp; UI Icons:</b><br/><i>Twemoji</i> licensed under <u>CC-BY 4.0</u><br/>Copyright &copy; " + currentYear + " Twitter, Inc and other contributors";
+                            licenseHeader = "<b>App &amp; UI Icons:</b><br/><i>Twemoji</i> licensed under <u>CC-BY 4.0</u><br/>Copyright &copy; 2021 Twitter, Inc and other contributors";
                             break;
                         case "FlatLaf-Apache2":
                             licenseHeader = "<b>UI Theme:</b><br/><i>FlatLaf</i> licensed under the <u>Apache 2.0 License</u><br/>Copyright &copy; " + currentYear + " FormDev Software GmbH. All rights reserved.";
@@ -98,21 +99,18 @@ public class QACreditsWindow extends javax.swing.JFrame {
                         case "USBIDRepo-3CBSD":
                             licenseHeader = "<b>Includes</b> <i>USB ID Repository</i> licensed under <u>3-Clause BSD</u><br/>Copyright &copy; " + currentYear + " Stephen J. Gowdy";
                             break;
+                        case "KeyboardTest-MIT":
+                            licenseHeader = "<b>Includes</b> <i>Keyboard Test</i> licensed under <u>MIT License</u><br/>Copyright &copy; 2020 Rajnish Mishra<br/>Copyright &copy; 2024-" + currentYear + " Free Geek";
+                            break;
                         default:
                             break;
                     }
 
                     String licenseContents = "License NOT FOUND";
 
-                    try (InputStream is = ClassLoader.getSystemClassLoader().getResourceAsStream("Resources/Licenses/" + licenseFilename + ".txt")) {
-                        if (is != null) {
-                            try (InputStreamReader isr = new InputStreamReader(is); BufferedReader reader = new BufferedReader(isr)) {
-                                licenseContents = reader.lines().collect(Collectors.joining(System.lineSeparator()));
-                            } catch (IOException ex) {
-
-                            }
-                        }
-                    } catch (IOException ex) {
+                    try (BufferedReader licenseReader = new BufferedReader(new InputStreamReader(ClassLoader.getSystemClassLoader().getResourceAsStream("Resources/Licenses/" + licenseFilename + ".txt")))) {
+                        licenseContents = licenseReader.lines().collect(Collectors.joining(System.lineSeparator()));
+                    } catch (Exception ex) {
 
                     }
 
@@ -141,9 +139,12 @@ public class QACreditsWindow extends javax.swing.JFrame {
 
     public void showCreditsWindow() {
         if (!isVisible()) {
+            pack();
+
             creditsScrollPane.setBorder(null); // Make sure border is set to null on each open because it can get reset it light/dark mode what changed.
             creditsScrollPane.getVerticalScrollBar().setValue(0);
             creditsScrollPane.getHorizontalScrollBar().setValue(0);
+            creditsEditorPane.setCaretPosition(0);
             setLocationRelativeTo(null);
         }
 
@@ -159,27 +160,26 @@ public class QACreditsWindow extends javax.swing.JFrame {
 
         appIconLabel = new javax.swing.JLabel();
         appNameLabel = new javax.swing.JLabel();
-        copyrightLabel = new javax.swing.JLabel();
         versionLabel = new javax.swing.JLabel();
         creditsSeparator1 = new javax.swing.JSeparator();
         creditsScrollPane = new javax.swing.JScrollPane();
         creditsEditorPane = new javax.swing.JEditorPane();
+        mainMenuBar = new javax.swing.JMenuBar();
+        togglePeripheralTestModeMenu = new javax.swing.JMenu();
+        menTogglePeripheralTestMode = new javax.swing.JMenuItem();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
         setTitle("QA Helper  —  Credits");
         setIconImages(new TwemojiImage("AppIcon", this).toImageIconsForFrame());
         setLocationByPlatform(true);
-        setMinimumSize(new java.awt.Dimension(460, 460));
         setName("creditsFrame"); // NOI18N
         setResizable(false);
 
         appIconLabel.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
-        appIconLabel.setIcon(new TwemojiImage("AppIcon", this).toImageIcon(false));
-        appIconLabel.setPreferredSize(new java.awt.Dimension(64, 64));
+        appIconLabel.setIcon(new TwemojiImage("AppIcon", this).toImageIcon(48, false));
+        appIconLabel.setPreferredSize(new java.awt.Dimension(48, 48));
 
         appNameLabel.setText("<html><b style='font-size: larger'>QA Helper</b></html>");
-
-        copyrightLabel.setText("Copyright © [YEAR] PCs for People & Free Geek - MIT License");
 
         versionLabel.setText("<html><b>Version:</b> YYYY.MM.DD-R</html>");
 
@@ -189,21 +189,32 @@ public class QACreditsWindow extends javax.swing.JFrame {
         creditsEditorPane.setContentType("text/html"); // NOI18N
         creditsScrollPane.setViewportView(creditsEditorPane);
 
+        togglePeripheralTestModeMenu.setText("Peripheral Test Mode");
+
+        menTogglePeripheralTestMode.setText("Toggle Peripheral Test Mode");
+        menTogglePeripheralTestMode.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                menTogglePeripheralTestModeActionPerformed(evt);
+            }
+        });
+        togglePeripheralTestModeMenu.add(menTogglePeripheralTestMode);
+
+        mainMenuBar.add(togglePeripheralTestModeMenu);
+
+        setJMenuBar(mainMenuBar);
+
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
         layout.setHorizontalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
-                .addGap(UIScale.scale(12), UIScale.scale(12), UIScale.scale(12))
+                .addGap(UIScale.scale(18), UIScale.scale(18), UIScale.scale(18))
                 .addComponent(appIconLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addGroup(layout.createSequentialGroup()
-                        .addComponent(appNameLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 169, Short.MAX_VALUE)
-                        .addComponent(versionLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                    .addComponent(copyrightLabel))
-                .addGap(UIScale.scale(12), UIScale.scale(12), UIScale.scale(12)))
+                .addGap(UIScale.scale(18), UIScale.scale(18), UIScale.scale(18))
+                .addComponent(appNameLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 157, Short.MAX_VALUE)
+                .addComponent(versionLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(UIScale.scale(18), UIScale.scale(18), UIScale.scale(18)))
             .addComponent(creditsSeparator1, javax.swing.GroupLayout.Alignment.TRAILING)
             .addComponent(creditsScrollPane, javax.swing.GroupLayout.Alignment.TRAILING)
         );
@@ -212,31 +223,96 @@ public class QACreditsWindow extends javax.swing.JFrame {
             .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                     .addGroup(layout.createSequentialGroup()
-                        .addGap(UIScale.scale(12), UIScale.scale(12), UIScale.scale(12))
-                        .addComponent(appIconLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                    .addGroup(layout.createSequentialGroup()
-                        .addGap(UIScale.scale(24), UIScale.scale(24), UIScale.scale(24))
+                        .addGap(UIScale.scale(26), UIScale.scale(26), UIScale.scale(26))
                         .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                             .addComponent(appNameLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                            .addComponent(versionLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(copyrightLabel)))
+                            .addComponent(versionLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)))
+                    .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
+                        .addGap(UIScale.scale(12), UIScale.scale(12), UIScale.scale(12))
+                        .addComponent(appIconLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addComponent(creditsSeparator1, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(0, 0, 0)
-                .addComponent(creditsScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, 369, Short.MAX_VALUE))
+                .addComponent(creditsScrollPane, javax.swing.GroupLayout.DEFAULT_SIZE, 354, Short.MAX_VALUE))
         );
 
         pack();
     }// </editor-fold>//GEN-END:initComponents
 
+    private void menTogglePeripheralTestModeActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menTogglePeripheralTestModeActionPerformed
+        String osName = System.getProperty("os.name");
+        ArrayList<File> peripheralTestModeFlagPaths = new ArrayList<>();
+
+        if (osName.startsWith("Linux")) {
+            String defaultDirectory = System.getProperty("user.home") + "/.local/qa-helper";
+
+            peripheralTestModeFlagPaths.add(new File(defaultDirectory + "/flags/peripheral-test-mode.flag"));
+
+            try {
+                String launchPath = new File(QACreditsWindow.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getPath();
+                String launchDirectory = launchPath.substring(0, launchPath.lastIndexOf("/"));
+
+                peripheralTestModeFlagPaths.add(new File(launchDirectory + "/flags/peripheral-test-mode.flag"));
+            } catch (URISyntaxException getLaunchPathException) {
+
+            }
+
+        } else if (osName.startsWith("Mac OS X") || osName.startsWith("macOS")) {
+            String macBuildInfoPath = "/Users/Shared/Build Info/";
+
+            peripheralTestModeFlagPaths.add(new File(macBuildInfoPath + "Peripheral Test Mode.flag"));
+            peripheralTestModeFlagPaths.add(new File(macBuildInfoPath + "Peripheral Test Mode.txt"));
+            peripheralTestModeFlagPaths.add(new File(macBuildInfoPath + "Peripheral Test Mode.flag.txt"));
+            peripheralTestModeFlagPaths.add(new File(macBuildInfoPath + "Peripheral Test Mode"));
+        } else if (osName.startsWith("Windows")) {
+            String windowsBuildInfoPath = "\\Install\\"; // TODO: Choose a better Windows folder at some point.
+
+            peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode"));
+            peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode.flag"));
+            peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode.txt"));
+            peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode.flag.txt"));
+        }
+
+        boolean isPeripheralTestMode = false;
+
+        for (File thisPeripheralTestModeFlagPath : peripheralTestModeFlagPaths) {
+            if (thisPeripheralTestModeFlagPath.exists()) {
+                isPeripheralTestMode = true;
+                break;
+            }
+        }
+
+        String[] confirmTogglePeripheralTestModeDialogButtons = new String[]{(isPeripheralTestMode ? "Disable" : "Enable") + " Peripheral Test Mode", "Cancel"};
+        int linuxWarningDialogReturn = JOptionPane.showOptionDialog(null, "<html><b>Are you sure you want to " + (isPeripheralTestMode ? "<i>disable</i>" : "<u>enable</u>") + " Peripheral Test Mode?</b><br/><br/>After Peripheral Test Mode has been " + (isPeripheralTestMode ? "disabled" : "enabled") + ", QA Helper will quit and you will need to manually re-launch it.</html>", "QA Helper  —  Confirm " + (isPeripheralTestMode ? "Disable" : "Enable") + " Peripheral Test Mode", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, confirmTogglePeripheralTestModeDialogButtons, confirmTogglePeripheralTestModeDialogButtons[0]);
+        if (linuxWarningDialogReturn == JOptionPane.YES_OPTION) {
+            if (isPeripheralTestMode) {
+                for (File thisPeripheralTestModeFlagPath : peripheralTestModeFlagPaths) {
+                    thisPeripheralTestModeFlagPath.delete();
+                }
+            } else {
+                File peripheralTestModeFlagFile = peripheralTestModeFlagPaths.get(0);
+                new File(peripheralTestModeFlagFile.getParent()).mkdirs();
+
+                try {
+                    peripheralTestModeFlagFile.createNewFile();
+                } catch (IOException createPeripheralTestModeFlagFileException) {
+
+                }
+            }
+
+            System.exit(0);
+        }
+    }//GEN-LAST:event_menTogglePeripheralTestModeActionPerformed
+
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JLabel appIconLabel;
     private javax.swing.JLabel appNameLabel;
-    private javax.swing.JLabel copyrightLabel;
     private javax.swing.JEditorPane creditsEditorPane;
     private javax.swing.JScrollPane creditsScrollPane;
     private javax.swing.JSeparator creditsSeparator1;
+    private javax.swing.JMenuBar mainMenuBar;
+    private javax.swing.JMenuItem menTogglePeripheralTestMode;
+    private javax.swing.JMenu togglePeripheralTestModeMenu;
     private javax.swing.JLabel versionLabel;
     // End of variables declaration//GEN-END:variables
 }

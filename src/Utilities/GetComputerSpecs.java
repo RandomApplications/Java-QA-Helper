@@ -19,7 +19,6 @@
 package Utilities;
 
 import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.DecimalFormat;
@@ -28,11 +27,12 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.w3c.dom.*;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
@@ -50,7 +50,7 @@ public final class GetComputerSpecs {
     //variable declarations
     private String hdSentinelBinaryTempPath;
     private String pciIDsDbTempPath;
-    private boolean didError = false;
+    private String loadSpecsExceptionString = "";
 
     private String os = "N/A";
     private String fullOS = "N/A";
@@ -59,55 +59,66 @@ public final class GetComputerSpecs {
     private String macShortModelName = "N/A";
     private String macModelIdentifier = "";
     private String fullModel = "N/A";
+    private String motherboardModel = "N/A";
+    private String fullMotherboardModel = "N/A";
     private String chassisType = "N/A";
     private boolean isLaptop = false;
     private boolean hasScreen = false;
-    private String macScreenType = "";
+    private final ArrayList<String> macScreenFeaturesArray = new ArrayList<>();
     private boolean hasTouchscreen = false;
     private boolean hasCamera = false;
+    private boolean possibleCustomDesktopOrBareMotherboard = false;
     private String brand = "N/A";
     private String fullBrand = "N/A";
+    private String motherboardBrand = "N/A";
+    private String fullMotherboardBrand = "N/A";
     private String serial = "N/A";
     private String fullSerial = "N/A";
+    private String motherboardSerial = "N/A";
+    private String fullMotherboardSerial = "N/A";
+    private String biosUUID = "N/A";
     private String cpu = "N/A";
     private String fullCPU = "N/A";
     private int cpuThreadCount = 0;
     private String ram = "N/A";
     private String fullRAM = "N/A";
     private String storage = "N/A";
-    private String fullStorage = "N/A";
-    private ArrayList<String> disksFormattedWithoutPartitionTable;
+    private final ArrayList<String> storageArray = new ArrayList<>();
+    private String storageSerial = "";
+    private final ArrayList<String> storageSerialsArray = new ArrayList<>();
+    private final ArrayList<String> disksFormattedWithoutPartitionTable = new ArrayList<>();
     private String driveHealth = "N/A";
     private boolean driveHealthWarning = false;
     private boolean driveTrimWarning = false;
     private boolean driveRecalled = false;
-    private String batteryCapacity = "N/A";
-    private ArrayList<String> batteryHealthWarning;
-    private ArrayList<String> batteryHealthError;
+    private final ArrayList<String> batteryHealthArray = new ArrayList<>();
+    private String powerAdapter = "";
+    private final ArrayList<String> batteryHealthWarningArray = new ArrayList<>();
+    private final ArrayList<String> batteryHealthErrorArray = new ArrayList<>();
     private String gpu = "N/A";
-    private String fullGPU = "N/A";
-    private String gpuIDs = "";
-    private String gpuErrorString = "";
+    private final ArrayList<String> gpuArray = new ArrayList<>();
+    private final ArrayList<String> gpuIDsArray = new ArrayList<>();
+    private final ArrayList<String> gpuErrorArray = new ArrayList<>();
     private String audio = "N/A";
-    private String audioIDs = "";
-    private String fullAudio = "N/A";
-    private String audioErrorString = "";
-    private String wireless = "N/A";
-    private String wirelessErrorString = "";
+    private final ArrayList<String> audioArray = new ArrayList<>();
+    private final ArrayList<String> audioIDsArray = new ArrayList<>();
+    private final ArrayList<String> audioErrorArray = new ArrayList<>();
+    private final ArrayList<String> wirelessArray = new ArrayList<>();
+    private final ArrayList<String> wirelessErrorArray = new ArrayList<>();
     private String screenSize = "N/A";
     private String fullScreenSize = "N/A";
     private String screenResolution = "";
-    private String screenErrorString = "";
+    private final ArrayList<String> screenErrorArray = new ArrayList<>();
     private String discDrive = "N/A";
-    private String fullDiscDrive = "N/A";
-    private ArrayList<String> discDriveLogicalNames;
+    private final ArrayList<String> discDriveArray = new ArrayList<>();
+    private final ArrayList<String> discDriveLogicalNames = new ArrayList<>();
     private boolean discDriveCanBurnCDs = false;
     private boolean discDriveCanBurnDVDs = false;
     private boolean hasDiscInDiscDrive = false;
     private boolean keyboardRecalled = false;
     private boolean serialIsMAC = false;
 
-    private String ethernetMAC = "N/A";
+    private final ArrayList<String> ethernetMACarray = new ArrayList<>();
 
     private String productKeyFromRegistryVbsTempPath;
 
@@ -120,10 +131,10 @@ public final class GetComputerSpecs {
             dirtyComputerBrand = dirtyComputerBrand.replaceAll("(?i)" + Pattern.quote(thisStringToRemove), "");
         }
 
-        return dirtyComputerBrand.replace("ASUSTeK", "ASUS").replace("FUJITSU", "Fujitsu").replace("Hewlett-Packard", "HP").replace("INTEL", "Intel").replace("LENOVO", "Lenovo").replace("Micro-Star International", "MSI").replace("MICRO-STAR INTERNATIONAL", "MSI").replace("SAMSUNG", "Samsung").replace("TOSHIBA", "Toshiba").trim().replaceAll("\\s{2,}", " ");
+        return dirtyComputerBrand.replace("ASUSTeK", "ASUS").replace("FUJITSU", "Fujitsu").replace("Hewlett-Packard", "HP").replace("INTEL", "Intel").replace("LENOVO", "Lenovo").replace("Micro-Star International", "MSI").replace("MICRO-STAR INTERNATIONAL", "MSI").replace("SAMSUNG", "Samsung").replace("TOSHIBA", "Toshiba").replace("GOOGLE", "Google").trim().replaceAll("\\s{2,}", " ");
     }
 
-    private boolean ignoreSpecsPlaceholders(String rawModel) {
+    public boolean ignoreSpecsPlaceholders(String rawModel) {
         String modelForComparison = rawModel.toLowerCase().replaceAll("[^a-z0-9]", ""); // Make lowercase and remove all except letters and number to not have to worry about any possible slight variations.
 
         if (modelForComparison.isEmpty()) {
@@ -142,14 +153,14 @@ public final class GetComputerSpecs {
                 "systemversion", "chassisversion", "notspecified", "lenovoproduct", "type1productconfigid", "rev1xx", "rev10", "102a", "0123456789", "invalid", "tbdbyoem", // Versions
                 "systemproductname", "unidentifiedsystem", "allseries", "notebook", // Products
                 "systemskunumber", "systemskunumberunknown", "systemsku", "all", "sku", "xxx123xaba", "type1sku0", "serenaskua", "asusnotebooksku", "asusultrabook", "undefined", "defaultstring", "badindex", // SKUs
-                "systemserialnumber", "123456789", "ing", "na", "nosn000", // Serials
+                "systemserialnumber", "chassisserialnumber", "123456789", "ing", "na", "nosn000", // Serials
                 "revx0x", "xx", // Motherboard Versions
                 "none" // Motherboard Serials
         ).contains(modelForComparison);
     }
 
     private String cleanCPU(String dirtyCPU) {
-        for (String thisStringToReplaceWithSpace : new String[]{"genuine", "authentic", "(r)", "(tm)", " cpu", " apu", " processor"}) {
+        for (String thisStringToReplaceWithSpace : new String[]{"genuine", "authentic", "(r)", "(tm)", "?", " cpu", " apu", " processor"}) {
             dirtyCPU = dirtyCPU.replaceAll("(?i)" + Pattern.quote(thisStringToReplaceWithSpace), " ");
         }
 
@@ -180,8 +191,8 @@ public final class GetComputerSpecs {
             }
         }
 
-        // "(R)", "®" (\u00AE), and "(TM)" could exist when brand is coming from Windows driver info rather than PCI ID Repo
-        for (String thisStringToRemove : new String[]{"(r)", "\u00AE", "(tm)", ",", " inc.", " incorporated", " inc", " ltd.", " ltd", " limited", " co.", " corp.", " corporation", " computers", " computer", " systems", " semiconductors", " semiconductor", " and subsidiaries"}) {
+        // "(R)", "®" (\u00AE), "(TM)", and "™" (\u2122) could exist when brand is coming from Windows driver info rather than PCI ID Repo
+        for (String thisStringToRemove : new String[]{"(r)", "\u00AE", "(tm)", "\u2122", "?", ",", " inc.", " incorporated", " inc", " ltd.", " ltd", " limited", " co.", " corp.", " corporation", " computers", " computer", " systems", " semiconductors", " semiconductor", " and subsidiaries"}) {
             cleanedDeviceBrand = cleanedDeviceBrand.replaceAll("(?i)" + Pattern.quote(thisStringToRemove), "");
         }
 
@@ -205,73 +216,87 @@ public final class GetComputerSpecs {
             cleanedDeviceModel += " HDMI Audio";
         }
 
-        // "(R)", "®" (\u00AE), "(TM)", and "Device" could exist when model is coming from Windows driver info rather than PCI ID Repo
-        return cleanedDeviceModel.replace("(R)", "").replace("\u00AE", "").replace("(TM)", "").replace("Generation", "Gen").replace("High Definition", "HD").replace("processor", "CPU").replace("Processor", "CPU").replace(" Controller", "").replace(" Adapter", "").replace(" Device", "").replace(" CODEC", "").trim().replaceAll("\\s{2,}", " ");
+        // "(R)", "®" (\u00AE), "(TM)", "™" (\u2122), and "Device" could exist when model is coming from Windows driver info rather than PCI ID Repo
+        return cleanedDeviceModel.replace("(R)", "").replace("\u00AE", "").replace("(TM)", "").replace("\u2122", "").replace("?", "").replace("Generation", "Gen").replace("High Definition", "HD").replace("processor", "CPU").replace("Processor", "CPU").replace("Wireless-", "").replace("Wireless", "").replace("PCIe", "").replace("PCI Express", "").replace("PCI-Express", "").replace(" Controller", "").replace(" Adapter", "").replace(" Device", "").replace(" CODEC", "").replace(" Network", "").replace(" Modem", "").replace("()", "").trim().replaceAll("\\s{2,}", " ");
     }
 
     public void reloadSpecs(String adminPassword, boolean isTestMode) {
-        String adminPasswordQuotedForShell = "'" + adminPassword.replace("'", "'\\''") + "'";
-
-        if (isTestMode) {
-            System.out.println("\n\nReloading Specs in Test Mode");
-        }
-
-        didError = false;
-        os = "N/A";
-        fullOS = "N/A";
-
-        model = "N/A";
-        fullModel = "N/A";
-        chassisType = "N/A";
-        isLaptop = false;
-        hasScreen = false;
-        macScreenType = "";
-        hasTouchscreen = false;
-        hasCamera = false;
-        brand = "N/A";
-        fullBrand = "N/A";
-        serial = "N/A";
-        fullSerial = "N/A";
-        cpu = "N/A";
-        fullCPU = "N/A";
-        cpuThreadCount = 0;
-        ram = "N/A";
-        fullRAM = "N/A";
-        storage = "N/A";
-        fullStorage = "N/A";
-        driveHealth = "N/A";
-        driveHealthWarning = false;
-        driveTrimWarning = false;
-        driveRecalled = false;
-        disksFormattedWithoutPartitionTable = new ArrayList<>();
-        batteryCapacity = "N/A";
-        batteryHealthWarning = new ArrayList<>();
-        batteryHealthError = new ArrayList<>();
-        gpu = "N/A";
-        fullGPU = "N/A";
-        gpuIDs = "";
-        gpuErrorString = "";
-        audio = "N/A";
-        audioIDs = "";
-        fullAudio = "N/A";
-        audioErrorString = "";
-        wireless = "N/A";
-        wirelessErrorString = "";
-        screenSize = "N/A";
-        fullScreenSize = "N/A";
-        screenResolution = "";
-        screenErrorString = "";
-        discDrive = "N/A";
-        fullDiscDrive = "N/A";
-        discDriveLogicalNames = new ArrayList<>();
-        discDriveCanBurnCDs = false;
-        discDriveCanBurnDVDs = false;
-        hasDiscInDiscDrive = false;
-        keyboardRecalled = false;
-
-        ethernetMAC = "N/A";
-
         try {
+            String adminPasswordQuotedForShell = "'" + adminPassword.replace("'", "'\\''") + "'";
+
+            if (isTestMode) {
+                System.out.println("\n\nReloading Specs in Test Mode");
+            }
+
+            loadSpecsExceptionString = "";
+            os = "N/A";
+            fullOS = "N/A";
+
+            model = "N/A";
+            macShortModelName = "N/A";
+            macModelIdentifier = "";
+            fullModel = "N/A";
+            motherboardModel = "N/A";
+            fullMotherboardModel = "N/A";
+            chassisType = "N/A";
+            isLaptop = false;
+            hasScreen = false;
+            macScreenFeaturesArray.clear();
+            hasTouchscreen = false;
+            hasCamera = false;
+            possibleCustomDesktopOrBareMotherboard = false;
+            brand = "N/A";
+            fullBrand = "N/A";
+            motherboardBrand = "N/A";
+            fullMotherboardBrand = "N/A";
+            serial = "N/A";
+            fullSerial = "N/A";
+            motherboardSerial = "N/A";
+            fullMotherboardSerial = "N/A";
+            biosUUID = "N/A";
+            cpu = "N/A";
+            fullCPU = "N/A";
+            cpuThreadCount = 0;
+            ram = "N/A";
+            fullRAM = "N/A";
+            storage = "N/A";
+            storageArray.clear();
+            storageSerial = "";
+            storageSerialsArray.clear();
+            disksFormattedWithoutPartitionTable.clear();
+            driveHealth = "N/A";
+            driveHealthWarning = false;
+            driveTrimWarning = false;
+            driveRecalled = false;
+            batteryHealthArray.clear();
+            powerAdapter = "";
+            batteryHealthWarningArray.clear();
+            batteryHealthErrorArray.clear();
+            gpu = "N/A";
+            gpuArray.clear();
+            gpuIDsArray.clear();
+            gpuErrorArray.clear();
+            audio = "N/A";
+            audioArray.clear();
+            audioIDsArray.clear();
+            audioErrorArray.clear();
+            wirelessArray.clear();
+            wirelessErrorArray.clear();
+            screenSize = "N/A";
+            fullScreenSize = "N/A";
+            screenResolution = "";
+            screenErrorArray.clear();
+            discDrive = "N/A";
+            discDriveArray.clear();
+            discDriveLogicalNames.clear();
+            discDriveCanBurnCDs = false;
+            discDriveCanBurnDVDs = false;
+            hasDiscInDiscDrive = false;
+            keyboardRecalled = false;
+            serialIsMAC = false;
+
+            ethernetMACarray.clear();
+
             os = System.getProperty("os.name") + " " + System.getProperty("os.version");
             boolean isLinux = (os.startsWith("Linux"));
             boolean isMacOS = (os.startsWith("Mac OS X") || os.startsWith("macOS"));
@@ -362,6 +387,10 @@ public final class GetComputerSpecs {
                     os += " Ventura";
                 } else if (os.startsWith("macOS 14")) {
                     os += " Sonoma";
+                } else if (os.startsWith("macOS 15")) {
+                    os += " Sequoia";
+                } else if (os.startsWith("macOS 16") || os.startsWith("macOS 26")) {
+                    os += " Tahoe";
                 }
             }
 
@@ -371,10 +400,7 @@ public final class GetComputerSpecs {
             String macModelIdentifierNumber = "";
             String macSerialConfigCode = "";
 
-            String motherboardBrand = "N/A";
             String motherboardVersion = "N/A";
-            String motherboardProduct = "N/A";
-            String motherboardSerial = "N/A";
 
             String cpuCurrentSpeedString = "";
             String cpuMaxSpeedString = "";
@@ -409,10 +435,11 @@ public final class GetComputerSpecs {
                 //      hdsentinel (INCLUDED IN JAR - DON'T NEED TO INSTALL)
                 //      upower
                 //      network-manager: nmcli
+                //      modemmanager: mmcli
                 //      bluez (for btmgmt)
                 //      x11-xserver-utils: xrandr
                 //      x11-utils: xdpyinfo
-                List<String> requiredLinuxToolsPackages = Arrays.asList("lsb-release", "xinput", "dmidecode", "util-linux", "pciutils", "lshw", "upower", "network-manager", "bluez", "x11-xserver-utils", "x11-utils");
+                List<String> requiredLinuxToolsPackages = Arrays.asList("lsb-release", "xinput", "dmidecode", "util-linux", "pciutils", "lshw", "upower", "network-manager", "modemmanager", "bluez", "x11-xserver-utils", "x11-utils");
 
                 ArrayList<String> aptCachePolicyCommand = new ArrayList<>();
                 aptCachePolicyCommand.addAll(Arrays.asList("/usr/bin/apt-cache", "policy"));
@@ -421,7 +448,7 @@ public final class GetComputerSpecs {
 
                 if (!adminPassword.equals("*UNKNOWN*") && (new CommandReader(aptCachePolicyCommandArray).getOutputLinesContaining("Installed: (none)").length > 0)) {
                     if (isTestMode) {
-                        System.out.println("installedLinuxToolsLocations:\n" + String.join("\n", new CommandReader(aptCachePolicyCommandArray).getOutputLines()));
+                        System.out.println("installedLinuxToolsLocations:\n" + new CommandReader(aptCachePolicyCommandArray).getOutputLinesAsString());
                     }
 
                     boolean requiredToolsAreInstalled = false;
@@ -437,7 +464,7 @@ public final class GetComputerSpecs {
 
                     if (new File("/proc/cmdline").exists()) {
                         try {
-                            List<String> linuxBootArguments = Arrays.asList(String.join(" ", Files.readAllLines(Paths.get("/proc/cmdline"), StandardCharsets.UTF_8)).split(" "));
+                            List<String> linuxBootArguments = Arrays.asList(String.join(" ", Files.readAllLines(Paths.get("/proc/cmdline"))).split(" "));
                             isLinuxUbiquityMode = (linuxBootArguments.contains("automatic-ubiquity") || linuxBootArguments.contains("only-ubiquity"));
                         } catch (IOException getLinuxBootArgsException) {
                             if (isTestMode) {
@@ -459,7 +486,7 @@ public final class GetComputerSpecs {
                             for (int i = 0; i < 10; i++) {
                                 if (waitForTerminalPIDtempFile.exists()) {
                                     try {
-                                        List<String> waitForTerminalPIDtempFileLines = Files.readAllLines(Paths.get(waitForTerminalPIDtempFile.getPath()), StandardCharsets.UTF_8);
+                                        List<String> waitForTerminalPIDtempFileLines = Files.readAllLines(waitForTerminalPIDtempFile.toPath());
 
                                         if (!waitForTerminalPIDtempFileLines.isEmpty()) {
                                             waitForTerminalPID = waitForTerminalPIDtempFileLines.get(0);
@@ -527,8 +554,8 @@ public final class GetComputerSpecs {
                 ArrayList<String> dmidecodeMemoryDeviceLines = new ArrayList<>();
 
                 String possibleMotherboardBrand = "N/A";
+                String possibleMotherboardModel = "N/A";
                 String possibleMotherboardVersion = "N/A";
-                String possibleMotherboardProduct = "N/A";
                 String possibleMotherboardSerial = "N/A";
 
                 boolean thisPhysicalMemoryArrayIsSystemMemory = false;
@@ -569,6 +596,8 @@ public final class GetComputerSpecs {
                                             model = thisDmidecodeProperty;
                                         } else if (thisDmidecodeLine.startsWith("\tSerial Number:")) {
                                             serial = thisDmidecodeProperty;
+                                        } else if (thisDmidecodeLine.startsWith("\tUUID:")) {
+                                            biosUUID = thisDmidecodeProperty.toUpperCase();
                                         } else if (thisDmidecodeLine.startsWith("\tSKU Number:") && thisDmidecodeProperty.replaceAll("[^A-Za-z0-9]", "").length() > 1) {
                                             systemProductSKU = thisDmidecodeProperty;
                                         }
@@ -580,14 +609,14 @@ public final class GetComputerSpecs {
                                         if (thisDmidecodeLine.startsWith("\tManufacturer:")) {
                                             possibleMotherboardBrand = cleanComputerBrand(thisDmidecodeProperty);
                                         } else if (thisDmidecodeLine.startsWith("\tProduct Name:")) {
-                                            possibleMotherboardProduct = thisDmidecodeProperty;
+                                            possibleMotherboardModel = thisDmidecodeProperty;
                                         } else if (thisDmidecodeLine.startsWith("\tVersion:") && thisDmidecodeProperty.replaceAll("[^A-Za-z0-9]", "").length() > 4) {
                                             possibleMotherboardVersion = thisDmidecodeProperty;
                                         } else if (thisDmidecodeLine.startsWith("\tSerial Number:")) {
                                             possibleMotherboardSerial = thisDmidecodeProperty;
                                         } else if (thisDmidecodeLine.startsWith("\tType:") && thisDmidecodeProperty.equals("Motherboard")) {
                                             motherboardBrand = possibleMotherboardBrand;
-                                            motherboardProduct = possibleMotherboardProduct;
+                                            motherboardModel = possibleMotherboardModel;
                                             motherboardVersion = possibleMotherboardVersion;
                                             motherboardSerial = possibleMotherboardSerial;
                                         }
@@ -960,28 +989,67 @@ public final class GetComputerSpecs {
                 }
 
                 // Use lsblk for Hard Drives (because it loads without admin and detects NVMe drives, which lshw doesn't)
-                String[] hardDrives = new CommandReader(new String[]{"/bin/lsblk", "-abdPpo", "NAME,SIZE,TRAN,ROTA,TYPE,MODEL", "-x", "NAME"}).getOutputLines();
+                String[] hardDrives = new CommandReader(new String[]{"/bin/lsblk", "-abdPpo", "NAME,SIZE,TRAN,ROTA,TYPE,RM,RO,SERIAL,VENDOR,MODEL", "-x", "NAME"}).getOutputLines();
 
                 ArrayList<String> internalDriveLogicalNames = new ArrayList<>();
 
                 if (hardDrives.length > 0) {
                     for (String thisHardDrive : hardDrives) {
                         String[] thisHardDriveParts = thisHardDrive.split("\"", -1); // Set -1 limit to include trailing empty elements since it may be possible for the model to be an empty string.
-                        if (thisHardDriveParts.length >= 13) {
-                            // Only list DISKs that have a TRANsport type of SATA or ATA or NVMe.
-                            if (thisHardDriveParts[9].equals("disk") && !thisHardDriveParts[3].equals("") && (thisHardDriveParts[5].endsWith("ata") || thisHardDriveParts[5].equals("nvme"))) {
+                        // Split lines on double quotes (") to easily extract each value out of each "lsblk" line, which will be like: NAME="/dev/sda" SIZE="1234567890" TRAN="sata" ROTA="0" TYPE="disk" RM="0" RO="0" SERIAL="ABC123" VENDOR="Some Brand" MODEL="Some Model Name"
+                        if (thisHardDriveParts.length >= 21) {
+                            int thisDriveValueIndex = 1;
+                            String thisDriveFullID = thisHardDriveParts[thisDriveValueIndex];
+                            thisDriveValueIndex += 2;
+                            String thisDriveSizeBytes = thisHardDriveParts[thisDriveValueIndex];
+                            thisDriveValueIndex += 2;
+                            String thisDriveTransport = thisHardDriveParts[thisDriveValueIndex];
+                            thisDriveValueIndex += 2;
+                            String thisDriveRotational = thisHardDriveParts[thisDriveValueIndex];
+                            thisDriveValueIndex += 2;
+                            String thisDriveType = thisHardDriveParts[thisDriveValueIndex];
+                            thisDriveValueIndex += 2;
+                            String thisDriveRemovable = thisHardDriveParts[thisDriveValueIndex];
+                            thisDriveValueIndex += 2;
+                            String thisDriveReadOnly = thisHardDriveParts[thisDriveValueIndex];
+                            thisDriveValueIndex += 2;
+                            String thisDriveSerial = thisHardDriveParts[thisDriveValueIndex].replaceAll("^[. /]+", "").replaceAll("[. /]+$", ""); // Trim all leading and trailing spaces, periods, and slashes.
+                            thisDriveValueIndex += 2;
+                            String thisDriveBrand = thisHardDriveParts[thisDriveValueIndex];
+                            thisDriveValueIndex += 2;
+
+                            // Only list DISKs that have a TRANsport type of SATA or ATA or NVMe or MMC (for eMMC embedded Memory Cards, which is confirmed below).
+                            if (thisDriveType.equals("disk") && thisDriveRemovable.equals("0") && thisDriveReadOnly.equals("0") && !thisDriveSizeBytes.equals("") && (thisDriveTransport.endsWith("ata") || thisDriveTransport.equals("nvme") || thisDriveTransport.equals("mmc"))) {
                                 try {
-                                    double thisDiskBytes = Double.parseDouble(thisHardDriveParts[3]);
+                                    double thisDiskBytes = Double.parseDouble(thisDriveSizeBytes);
 
-                                    if (thisDiskBytes > 1000000) {
+                                    boolean mmcIsEmbedded = false;
+                                    if (thisDriveTransport.equals("mmc")) {
+                                        String mmcType = new CommandReader(new String[]{"/bin/udevadm", "info", "--query", "property", "--property", "MMC_TYPE", "--value", "-p", ("/sys/class/block/" + thisDriveFullID.replace("/dev/", ""))}).getFirstOutputLine();
+                                        if (mmcType.equals("MMC") || (mmcType.isEmpty() && !new CommandReader(new String[]{"/bin/udevadm", "info", "--query", "symlink", "-p", ("/sys/class/block/" + thisDriveFullID.replace("/dev/", ""))}).getFirstOutputLine().contains("/by-id/mmc-USD_"))) {
+                                            // Only show eMMC which should have "MMC_TYPE" of "MMC" rather than "SD" (regular Memory Cards can still show as non-removable from "lsblk" though).
+                                            // Or, if "MMC_TYPE" doesn't exist (on older versions of "udevadm"?), eMMC should have some UDEV ID starting with other than "USD_" which would indicate an actual Memory Card.
+                                            mmcIsEmbedded = true;
+                                        }
+                                    }
+
+                                    if ((thisDiskBytes > 1000000) && (!thisDriveTransport.equals("mmc") || mmcIsEmbedded)) {
                                         // 2016/2017 MacBooks can have 8 KB secondary NVMe Namespace (nvme0n2) that we want to ignore, unsure exactly why it exists at all.
+                                        // Only show eMMC which should have "MMC_TYPE" of "MMC" rather than "SD" (regular Memory Cards can still show as non-removable from "lsblk" though).
 
-                                        boolean thisDiskIsNVMe = thisHardDriveParts[5].equals("nvme");
+                                        boolean thisDiskIsNVMe = thisDriveTransport.equals("nvme");
 
-                                        double thisSize = (thisDiskBytes / 1000 / 1000 / 1000);
-                                        String thisDisk = new DecimalFormat("#").format(thisSize) + " GB " + (thisDiskIsNVMe ? "NVMe" : (thisHardDriveParts[7].equals("0") ? "SSD" : "HDD"));
+                                        double thisDriveGB = (thisDiskBytes / 1000 / 1000 / 1000);
+                                        String thisDriveSize;
+                                        if (thisDriveGB < 1000) {
+                                            thisDriveSize = new DecimalFormat("#").format(thisDriveGB) + " GB";
+                                        } else {
+                                            thisDriveSize = new DecimalFormat("#").format((thisDriveGB / 1000)) + " TB";
+                                        }
 
-                                        String thisDriveModel = String.join(" ", Arrays.copyOfRange(thisHardDriveParts, 11, thisHardDriveParts.length)).trim().replace("_", " ").replace("(", "").replace(")", "").replaceAll("\\s{2,}", " ");
+                                        String thisDisk = thisDriveSize + " " + (thisDiskIsNVMe ? "NVMe" : (thisDriveTransport.equals("mmc") ? "eMMC" : (thisDriveRotational.equals("0") ? "SSD" : "HDD"))); // Only internal embedded MMC drives will be detected based on conditions above, so display them as "eMMC".
+
+                                        String thisDriveModel = String.join(" ", Arrays.copyOfRange(thisHardDriveParts, thisDriveValueIndex, thisHardDriveParts.length)).trim().replace("_", " ").replace("(", "").replace(")", "").replaceAll("\\s{2,}", " ");
                                         // NOTES:
                                         // - I don't know if it's possible for models to contain double quotes ("), but if they do there will be more elements at the end of the "thisHardDriveParts" that need to be joined back together to re-create the
                                         //   full model name which is what is being done with "Arrays.copyOfRange", but just re-join with spaces to not need to worry about removing a trailing quotation mark since there will always be an final empty element in the array.
@@ -997,23 +1065,34 @@ public final class GetComputerSpecs {
                                         //   Since we haven't installed Mint 19.3 for multiple years, just use the model name from "lsblk" since it will always be the full model for our usage.
                                         //   (If other companies using QA Helper are still running Mint 19.X, then truncated model names will still be retrieved on those systems but since Mint 19.X is EOL April 2023 it shouldn't really be getting installed anymore anyways.)
 
+                                        thisDriveBrand = thisDriveBrand.trim().replace("_", " ").replace("(", "").replace(")", "").replaceAll("\\s{2,}", " ");
+                                        if (!thisDriveBrand.isEmpty()) {
+                                            String thisDriveBrandUppercase = thisDriveBrand.toUpperCase();
+                                            if (!thisDriveBrandUppercase.equals("GENERAL") && !thisDriveBrandUppercase.equals("ATA")) { // TODO: Find and ignore other generic VENDOR strings.
+                                                if (thisDriveModel.isEmpty()) {
+                                                    thisDriveModel = thisDriveBrand;
+                                                } else if (!thisDriveModel.toUpperCase().contains(thisDriveBrandUppercase)) {
+                                                    thisDriveModel = thisDriveBrand + " " + thisDriveModel;
+                                                }
+                                            }
+                                        }
+
                                         if (!thisDriveModel.isEmpty()) {
                                             thisDisk += " (" + thisDriveModel + ")";
                                         }
 
-                                        if (storage.equals("N/A")) {
-                                            storage = thisDisk;
-                                        } else {
-                                            storage += " + " + thisDisk;
+                                        storageArray.add(thisDisk);
+
+                                        if (!thisDriveSerial.isEmpty()) {
+                                            storageSerialsArray.add(thisDriveSerial);
                                         }
 
-                                        String thisDiskID = thisHardDriveParts[1];
-                                        if (thisDiskIsNVMe && thisDiskID.startsWith("/dev/nvme")) {
+                                        if (thisDiskIsNVMe && thisDriveFullID.startsWith("/dev/nvme")) {
                                             // This NVMe drive logical name will be like "/dev/nvme0n1", but we need it to just be like "/dev/nvme0" to match against the logical drive names from HD Sentinel.
                                             // So, split on n's and only use index 1 to always get the right identifier even if there isn't a 2nd n portion at the end.
-                                            internalDriveLogicalNames.add("/dev/n" + thisDiskID.split("n")[1]);
+                                            internalDriveLogicalNames.add("/dev/n" + thisDriveFullID.split("n")[1]);
                                         } else {
-                                            internalDriveLogicalNames.add(thisDiskID);
+                                            internalDriveLogicalNames.add(thisDriveFullID);
                                         }
                                     }
                                 } catch (NumberFormatException hardDriveSizeException) {
@@ -1023,6 +1102,59 @@ public final class GetComputerSpecs {
                                 }
                             }
                         }
+                    }
+                }
+
+                // Wireless and Ethernet MAC for Linux
+                String[] allNetworkDeviceInfo = new CommandReader(new String[]{"/usr/bin/nmcli", "-f", "GENERAL.VENDOR,GENERAL.PRODUCT,GENERAL.HWADDR,GENERAL.TYPE", "device", "show"}).getOutputLines();
+
+                String thisNetworkDeviceBrand = "";
+                String thisNetworkDeviceModel = "";
+                String thisNetworkDeviceMAC = "";
+
+                for (String thisNetworkDeviceInfoLine : allNetworkDeviceInfo) {
+                    if (thisNetworkDeviceInfoLine.startsWith("GENERAL.VENDOR:")) {
+                        thisNetworkDeviceBrand = cleanDeviceBrand(thisNetworkDeviceInfoLine.substring(thisNetworkDeviceInfoLine.indexOf(":") + 1).trim()).replace("(", "[").replace(")", "]");
+                    } else if (thisNetworkDeviceInfoLine.startsWith("GENERAL.PRODUCT:")) {
+                        thisNetworkDeviceModel = cleanDeviceModel(thisNetworkDeviceInfoLine.substring(thisNetworkDeviceInfoLine.indexOf(":") + 1).trim()).replace("(", "[").replace(")", "]");
+                    } else if (thisNetworkDeviceInfoLine.startsWith("GENERAL.HWADDR:")) {
+                        thisNetworkDeviceMAC = thisNetworkDeviceInfoLine.substring(thisNetworkDeviceInfoLine.indexOf(":") + 1).trim().toUpperCase();
+                    } else if (thisNetworkDeviceInfoLine.startsWith("GENERAL.TYPE:")) {
+                        String thisNetworkDeviceType = thisNetworkDeviceInfoLine.substring(thisNetworkDeviceInfoLine.indexOf(":") + 1).trim().toLowerCase();
+                        if (thisNetworkDeviceType.equals("ethernet")) {
+                            ethernetMACarray.add(thisNetworkDeviceMAC);
+                        } else if (thisNetworkDeviceType.equals("wifi") && !getWireless().contains("Wi-Fi Detected")) {
+                            String thisWifiInfo = "Wi-Fi Detected";
+
+                            if (!thisNetworkDeviceModel.isEmpty()) {
+                                thisWifiInfo += " (" + ((thisNetworkDeviceBrand.isEmpty() || thisNetworkDeviceModel.startsWith(thisNetworkDeviceBrand)) ? thisNetworkDeviceModel : (thisNetworkDeviceBrand + " " + thisNetworkDeviceModel)) + ")";
+                            }
+
+                            wirelessArray.add(thisWifiInfo);
+                        }
+
+                        thisNetworkDeviceBrand = "";
+                        thisNetworkDeviceModel = "";
+                        thisNetworkDeviceMAC = "";
+                    }
+                }
+
+                // Cellular for Linux
+                // NOTE: I have seen some cellular cards not show immediately on boot take a minute or two to be initialized and recognized via "mmcli" (or "nmcli"),
+                // and running "mmcli --scan-modems" doesn't seem to help, so "lscpi" will also be used below as a fallback to check for cellular cards.
+                String[] cellularDeviceInfo = new CommandReader(new String[]{"/usr/bin/mmcli", "--list-modems"}).getOutputLines();
+                for (String thisCellularDeviceInfoLine : cellularDeviceInfo) {
+                    thisCellularDeviceInfoLine = thisCellularDeviceInfoLine.trim().replaceAll("\\s{2,}", " ");
+                    if (thisCellularDeviceInfoLine.contains("/Modem/")) {
+                        // The modem line will be like: /org/freedesktop/ModemManager1/Modem/0 [Modem Manufacturer] Modem Model
+                        String modemModelName = thisCellularDeviceInfoLine.substring(thisCellularDeviceInfoLine.indexOf(" ") + 1);
+                        if (modemModelName.contains("] ")) { // Remove Modem Manufacturer in square brackets.
+                            modemModelName = modemModelName.substring(modemModelName.indexOf("] ") + 2);
+                        }
+
+                        modemModelName = cleanDeviceModel(modemModelName);
+
+                        wirelessArray.add("Cellular Detected" + ((modemModelName.isEmpty() || modemModelName.contains("model unknown")) ? "" : " (" + modemModelName + ")"));
                     }
                 }
 
@@ -1052,7 +1184,8 @@ public final class GetComputerSpecs {
                     }
                 }
 
-                // Use lspci instead of lshw for Audo and GPU because it can load SubClass names while lshw doesn't.
+                // Use "lspci" instead of "lshw" for Audo and GPU because it can load SubClass names while "lshw" doesn't.
+                // NOTE: "lscpi" will also be used below as a fallback to check for cellular cards as described above.
                 ArrayList<String> lspciCommand = new ArrayList<>();
                 lspciCommand.addAll(Arrays.asList("/usr/bin/lspci", "-vnnmm"));
                 if (pciIDsDbTempPath != null) {
@@ -1063,6 +1196,7 @@ public final class GetComputerSpecs {
 
                 boolean isLspciGPU = false;
                 boolean isLspciAudio = false;
+                boolean isLspciWireless = false;
                 String thisLspciVendorName = "";
                 String thisLspciDeviceName = "";
 
@@ -1072,14 +1206,20 @@ public final class GetComputerSpecs {
 
                         if (thisLspciLine.startsWith("Class:")) {
                             // PCI Classes: https://pci-ids.ucw.cz/read/PD
-                            if (thisLspciProperty.substring(0, thisLspciProperty.length() - 3).endsWith(" [03")) {
+                            String thisLspciPropertyEndingWithClass = thisLspciProperty.substring(0, thisLspciProperty.length() - 3);
+                            if (thisLspciPropertyEndingWithClass.endsWith(" [03")) {
                                 // Class: Display controller (03)
                                 isLspciGPU = true;
                             } else if (thisLspciProperty.endsWith(" [0401]") || thisLspciProperty.endsWith(" [0403]")) {
                                 // Class: Multimedia controller (04) - SubClass: Multimedia audio controller (01) OR Audio device (03)
                                 isLspciAudio = true;
+                            } else if (thisLspciPropertyEndingWithClass.endsWith(" [02") || thisLspciPropertyEndingWithClass.endsWith(" [0d")) {
+                                // Class: Network controller (02)                                
+                                // Class: Wireless controller (0d)
+                                // Seems like "40" may be the subclass for cellular cards under Wireless "0d", but don't have enough data to know for sure.
+                                isLspciWireless = true;
                             }
-                        } else if (isLspciGPU || isLspciAudio) {
+                        } else if (isLspciGPU || isLspciAudio || isLspciWireless) {
                             if (thisLspciLine.startsWith("Vendor:")) {
                                 if (thisLspciProperty.startsWith("Vendor [")) {
                                     thisLspciVendorName = "Vendor " + thisLspciProperty.substring(thisLspciProperty.lastIndexOf("[") + 1, thisLspciProperty.lastIndexOf("]")).toUpperCase(); // Remove square brakets and keep Vendor code at the end when Vendor name not found.
@@ -1107,31 +1247,63 @@ public final class GetComputerSpecs {
 
                                 String thisLspciDeviceFullName = thisLspciVendorName + (thisLspciDeviceName.equals(thisLspciSubDeviceName) ? thisLspciDeviceName : thisLspciDeviceName + " [" + thisLspciSubDeviceName + "]");
 
-                                if (!thisLspciDeviceFullName.contains("802.11") && !thisLspciDeviceFullName.contains("Wireless Network") && !thisLspciDeviceFullName.contains("Intel Wireless") && !thisLspciDeviceFullName.contains("Centrino") && !thisLspciDeviceFullName.contains("Ethernet") && !thisLspciDeviceFullName.contains("Card Reader") && !thisLspciDeviceFullName.contains("MMC/SD") && !thisLspciDeviceFullName.contains("SDXC/MMC")) {
+                                if (isLspciWireless) {
+                                    String lowercaseLspciWirelessDeviceName = thisLspciDeviceFullName.toLowerCase();
+                                    if (!getWireless().contains("Cellular Detected") && (lowercaseLspciWirelessDeviceName.contains("mobile") || lowercaseLspciWirelessDeviceName.contains("cellular") || lowercaseLspciWirelessDeviceName.contains("wwan") || lowercaseLspciWirelessDeviceName.replace("realtek", "").contains("lte"))) {
+                                        wirelessArray.add("Cellular Detected (" + thisLspciDeviceFullName + ")");
+                                    }
+                                } else if (!thisLspciDeviceFullName.contains("802.11") && !thisLspciDeviceFullName.contains("Wireless Network") && !thisLspciDeviceFullName.contains("Intel Wireless") && !thisLspciDeviceFullName.contains("Centrino") && !thisLspciDeviceFullName.contains("Ethernet") && !thisLspciDeviceFullName.contains("Card Reader") && !thisLspciDeviceFullName.contains("MMC/SD") && !thisLspciDeviceFullName.contains("SDXC/MMC")) {
                                     // Ignore network and card reader devices that are getting caught from these classes and listed with actual GPU or Audio devices.
 
                                     if (isLspciGPU) {
-                                        if (gpu.equals("N/A")) {
-                                            gpu = thisLspciDeviceFullName;
-                                        } else if (!gpu.contains(thisLspciDeviceFullName)) {
-                                            gpu += " + " + thisLspciDeviceFullName;
+                                        if (!gpuArray.contains(thisLspciDeviceFullName)) { // TODO: Should this check against getFullGPU() instead of gpuArray?
+                                            gpuArray.add(thisLspciDeviceFullName);
                                         }
                                     } else if (isLspciAudio) {
-                                        if (audio.equals("N/A")) {
-                                            audio = thisLspciDeviceFullName;
-                                        } else if (!audio.contains(thisLspciDeviceFullName)) {
-                                            audio += " + " + thisLspciDeviceFullName;
+                                        if (!audioArray.contains(thisLspciDeviceFullName)) { // TODO: Should this check against getFullAudio() instead of audioArray?
+                                            audioArray.add(thisLspciDeviceFullName);
                                         }
                                     }
                                 }
 
                                 isLspciGPU = false;
                                 isLspciAudio = false;
+                                isLspciWireless = false;
                                 thisLspciVendorName = "";
                                 thisLspciDeviceName = "";
                             }
                         }
                     }
+                }
+
+                // Bluetooth for Linux
+                String[] bluetoothInfo = new CommandReader(new String[]{"/usr/bin/btmgmt", "info"}).getOutputLinesContaining(new String[]{" version ", "supported settings:"});
+
+                if (bluetoothInfo.length > 0) {
+                    String bluetoothVersion = "";
+                    String bluetoothFeatures = "";
+
+                    for (String thisBluetoothInfoLine : bluetoothInfo) {
+                        if (thisBluetoothInfoLine.trim().startsWith("addr ") && thisBluetoothInfoLine.contains(" version ")) {
+                            String bluetoothHCIversion = thisBluetoothInfoLine.split(" version ")[1].split(" ")[0].replaceAll("[^0-9]", "");
+
+                            if (!bluetoothHCIversion.isEmpty()) {
+                                // HCI/LMP version references: https://support.microsoft.com/en-us/help/4524769/windows-10-what-bluetooth-version-is-on-my-device
+                                String[] bluetoothHCIversionTranslation = {"1.0b", "1.1", "1.2", "2.0", "2.1", "3.0", "4.0", "4.1", "4.2", "5.0", "5.1", "5.2", "5.3", "5.4", "6.0"};
+
+                                int bluetoothHCIversionInt = Integer.parseInt(bluetoothHCIversion);
+                                if (bluetoothHCIversionTranslation.length > bluetoothHCIversionInt) {
+                                    bluetoothVersion = " " + bluetoothHCIversionTranslation[bluetoothHCIversionInt] + " ";
+                                } else {
+                                    bluetoothVersion = " (HCI " + bluetoothHCIversion + ") ";
+                                }
+                            }
+                        } else if (thisBluetoothInfoLine.trim().startsWith("supported settings:") && thisBluetoothInfoLine.contains(" le ")) {
+                            bluetoothFeatures = " (Supports BLE)";
+                        }
+                    }
+
+                    wirelessArray.add("Bluetooth" + bluetoothVersion + "Detected" + bluetoothFeatures);
                 }
 
                 // Use lshw for Disc Drives, and to detect Hard Drives formatted without a partition table
@@ -1148,18 +1320,21 @@ public final class GetComputerSpecs {
                     lshwCommand.addAll(Arrays.asList("-c", "system"));
                 }
 
-                CommandReader lshwResult;
+                String lshwOutputXML;
                 if (adminPassword.equals("*UNKNOWN*")) {
-                    lshwResult = new CommandReader(lshwCommand.toArray(String[]::new));
+                    lshwOutputXML = new CommandReader(lshwCommand.toArray(String[]::new)).getOutputLinesAsString();
                 } else {
-                    lshwResult = new CommandReader("printf '%s\\n' " + adminPasswordQuotedForShell + " | /usr/bin/sudo -Sk " + String.join(" ", lshwCommand));
+                    lshwOutputXML = new CommandReader("printf '%s\\n' " + adminPasswordQuotedForShell + " | /usr/bin/sudo -Sk " + String.join(" ", lshwCommand)).getOutputLinesAsString();
                 }
 
                 DocumentBuilder documentBuilder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
 
-                Document lshwXMLDocument = documentBuilder.parse(new InputSource(new StringReader(String.join("\n", lshwResult.getOutputLines()))));
-
-                NodeList lshwNodeList = lshwXMLDocument.getElementsByTagName("node");
+                NodeList lshwNodeList;
+                try {
+                    lshwNodeList = documentBuilder.parse(new InputSource(new StringReader(lshwOutputXML))).getElementsByTagName("node");
+                } catch (IOException | SAXException xmlParseException) {
+                    throw new Exception("LSHW XML PARSE EXCEPTION: " + xmlParseException + "\n\nRAW LSHW OUTPUT:\n" + lshwOutputXML);
+                }
 
                 if (lshwNodeList != null && lshwNodeList.getLength() > 0) {
                     for (int i = 0; i < lshwNodeList.getLength(); i++) {
@@ -1174,7 +1349,7 @@ public final class GetComputerSpecs {
                             }
                             if (thisElement.getAttribute("disabled").equals("true")) {
                                 // Skip any disabled elements.
-                            } else if (thisElementClass.equals("system")) {
+                            } else if (thisElementClass.equals("system") && !thisElement.getAttribute("handle").isEmpty()) {
                                 if (systemProductName.equals("N/A")) {
                                     // system class is only loaded if systemProductName is N/A (see comment above).
                                     NodeList systemProductNodes = thisElement.getElementsByTagName("product");
@@ -1234,26 +1409,24 @@ public final class GetComputerSpecs {
                                                 }
                                             }
                                         } else if (thisElementID.equals("cdrom")) {
+                                            String thisDiscDriveInfo = "";
+
                                             NodeList discDriveVendorNodes = thisElement.getElementsByTagName("vendor");
                                             if (discDriveVendorNodes != null && discDriveVendorNodes.getLength() > 0 && discDriveVendorNodes.item(0).getParentNode().isSameNode(thisElement)) {
-                                                String thisDiscDriveVendor = discDriveVendorNodes.item(0).getTextContent();
-
-                                                if (discDrive.equals("N/A")) {
-                                                    discDrive = thisDiscDriveVendor;
-                                                } else {
-                                                    discDrive += " + " + thisDiscDriveVendor;
-                                                }
+                                                thisDiscDriveInfo = discDriveVendorNodes.item(0).getTextContent();
                                             }
 
                                             NodeList discDriveProductNodes = thisElement.getElementsByTagName("product");
                                             if (discDriveProductNodes != null && discDriveProductNodes.getLength() > 0 && discDriveProductNodes.item(0).getParentNode().isSameNode(thisElement)) {
-                                                String thisDiscDriveProduct = discDriveProductNodes.item(0).getTextContent().trim().replaceAll("\\s{2,}", " ");
-
-                                                if (discDrive.equals("N/A")) {
-                                                    discDrive = thisDiscDriveProduct;
-                                                } else {
-                                                    discDrive += " " + thisDiscDriveProduct;
+                                                if (!thisDiscDriveInfo.isEmpty()) {
+                                                    thisDiscDriveInfo += " ";
                                                 }
+
+                                                thisDiscDriveInfo += discDriveProductNodes.item(0).getTextContent().trim().replaceAll("\\s{2,}", " ");
+                                            }
+
+                                            if (!thisDiscDriveInfo.isEmpty()) {
+                                                discDriveArray.add(thisDiscDriveInfo);
                                             }
 
                                             NodeList cdromLogicalNameNodes = thisElement.getElementsByTagName("logicalname");
@@ -1377,80 +1550,78 @@ public final class GetComputerSpecs {
                             if (hdSentinelTextOutput.isEmpty()) {
                                 driveHealth = "FAILED to load Hard Disk Sentinel for unknown reasons.\n\nThis could mean that some installed drive is bad, or this may have happened because of some unrelated issue.\n\nIt is recommended to test all installed drives using other means before continuing.";
                                 driveHealthWarning = true;
-                            } else if (storage.equals("N/A")) {
+                            } else if (storageArray.isEmpty()) {
                                 driveHealth = hdSentinelTextOutput + "\n\nNo hard drives installed or detected.";
                             } else {
-                                driveHealth = hdSentinelTextOutput + "\n\nIt appears that Hard Disk Sentinel has failed to detect an installed " + (storage.contains("NVMe") ? "NVMe" : "hard") + " drive.\n\nIf you have other easy means to test the health of the installed drive, it is recommended to do so. If not, then this Drive Health test should be skipped.";
+                                driveHealth = hdSentinelTextOutput + "\n\nIt appears that Hard Disk Sentinel has failed to detect an installed " + (getFullStorage().contains("NVMe") ? "NVMe" : "hard") + " drive.\n\nIf you have other easy means to test the health of the installed drive, it is recommended to do so. If not, then this Drive Health test should be skipped.";
                                 driveHealthWarning = true;
                             }
                         }
                     } else {
                         try {
-                            Document hdSentinelXMLDocument = documentBuilder.parse(hdSentinelOutputFile.getPath());
-
-                            NodeList hdSentinelNodeList = hdSentinelXMLDocument.getElementsByTagName("Hard_Disk_Device");
+                            NodeList hdSentinelNodeList = documentBuilder.parse(hdSentinelOutputFile.getPath()).getElementsByTagName("Hard_Disk_Device");
                             if (hdSentinelNodeList != null && hdSentinelNodeList.getLength() > 0) {
                                 for (int i = 0; i < hdSentinelNodeList.getLength(); i++) {
                                     Node thisNode = hdSentinelNodeList.item(i);
                                     String thisDriveID = thisNode.getTextContent();
-                                    boolean thisDriveIsInternal = internalDriveLogicalNames.contains(thisDriveID);
 
-                                    if (thisDriveIsInternal) {
+                                    if (internalDriveLogicalNames.contains(thisDriveID)) {
                                         hdSentinelTextOutput = hdSentinelTextOutput.replace(": " + thisDriveID + "\n", ": " + thisDriveID + " (INTERNAL)\n");
 
-                                        Element parentDriveElement = (Element) thisNode.getParentNode();
+                                        if (!driveHealthWarning) {
+                                            Element parentDriveElement = (Element) thisNode.getParentNode();
 
-                                        NodeList driveTipNodes = parentDriveElement.getElementsByTagName("Tip");
-                                        if (driveTipNodes != null && driveTipNodes.getLength() > 0 && driveTipNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
-                                            if (!driveTipNodes.item(0).getTextContent().equals("No actions needed.")) {
-                                                driveHealthWarning = true;
-                                                break;
-                                            }
-                                        }
+                                            NodeList drivePowerOnTimeNodes = parentDriveElement.getElementsByTagName("Power_on_time");
+                                            if (drivePowerOnTimeNodes != null && drivePowerOnTimeNodes.getLength() > 0 && drivePowerOnTimeNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
+                                                String drivePowerOnTimeText = drivePowerOnTimeNodes.item(0).getTextContent();
 
-                                        NodeList driveDescriptionNodes = parentDriveElement.getElementsByTagName("Description");
-                                        if (driveDescriptionNodes != null && driveDescriptionNodes.getLength() > 0 && driveDescriptionNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
-                                            if (!driveDescriptionNodes.item(0).getTextContent().contains("is PERFECT.")) {
-                                                driveHealthWarning = true;
-                                                break;
-                                            }
-                                        }
-
-                                        NodeList drivePowerOnTimeNodes = parentDriveElement.getElementsByTagName("Power_on_time");
-                                        if (drivePowerOnTimeNodes != null && drivePowerOnTimeNodes.getLength() > 0 && drivePowerOnTimeNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
-                                            String drivePowerOnTime = drivePowerOnTimeNodes.item(0).getTextContent();
-
-                                            if (drivePowerOnTime.contains(" days")) {
-                                                try {
-                                                    if (Integer.parseInt(drivePowerOnTime.substring(0, drivePowerOnTime.indexOf(" days"))) >= 2500) {
-                                                        driveHealthWarning = true;
-                                                        break;
-                                                    }
-                                                } catch (NumberFormatException drivePowerOnTimeException) {
-                                                    if (isTestMode) {
-                                                        System.out.println("drivePowerOnTimeException: " + drivePowerOnTimeException);
+                                                if (!drivePowerOnTimeText.isEmpty() && drivePowerOnTimeText.contains(" days")) {
+                                                    try {
+                                                        if (Integer.parseInt(drivePowerOnTimeText.substring(0, drivePowerOnTimeText.indexOf(" days"))) >= 2500) {
+                                                            driveHealthWarning = true;
+                                                        }
+                                                    } catch (NumberFormatException drivePowerOnTimeException) {
+                                                        if (isTestMode) {
+                                                            System.out.println("drivePowerOnTimeException: " + drivePowerOnTimeException);
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
 
-                                        NodeList driveEstimatedRemainingLifetimeNodes = parentDriveElement.getElementsByTagName("Estimated_remaining_lifetime");
-                                        if (driveEstimatedRemainingLifetimeNodes != null && driveEstimatedRemainingLifetimeNodes.getLength() > 0 && driveEstimatedRemainingLifetimeNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
-                                            String driveEstimatedRemainingLifetime = driveEstimatedRemainingLifetimeNodes.item(0).getTextContent();
+                                            NodeList driveEstimatedRemainingLifetimeNodes = parentDriveElement.getElementsByTagName("Estimated_remaining_lifetime");
+                                            if (driveEstimatedRemainingLifetimeNodes != null && driveEstimatedRemainingLifetimeNodes.getLength() > 0 && driveEstimatedRemainingLifetimeNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
+                                                String driveEstimatedRemainingLifetimeText = driveEstimatedRemainingLifetimeNodes.item(0).getTextContent();
 
-                                            if (!driveEstimatedRemainingLifetime.contains(" days")) {
-                                                driveHealthWarning = true;
-                                                break;
-                                            } else {
-                                                try {
-                                                    if (Integer.parseInt(driveEstimatedRemainingLifetime.substring(0, driveEstimatedRemainingLifetime.indexOf(" days")).replaceAll("[^0-9]", "")) < 400) {
+                                                if (!driveEstimatedRemainingLifetimeText.isEmpty()) {
+                                                    if (!driveEstimatedRemainingLifetimeText.contains(" days")) {
                                                         driveHealthWarning = true;
-                                                        break;
+                                                    } else {
+                                                        try {
+                                                            if (Integer.parseInt(driveEstimatedRemainingLifetimeText.substring(0, driveEstimatedRemainingLifetimeText.indexOf(" days")).replaceAll("[^0-9]", "")) < 400) {
+                                                                driveHealthWarning = true;
+                                                            }
+                                                        } catch (NumberFormatException driveEstimatedRemainingLifetimeException) {
+                                                            if (isTestMode) {
+                                                                System.out.println("driveEstimatedRemainingLifetimeException: " + driveEstimatedRemainingLifetimeException);
+                                                            }
+                                                        }
                                                     }
-                                                } catch (NumberFormatException driveEstimatedRemainingLifetimeException) {
-                                                    if (isTestMode) {
-                                                        System.out.println("driveEstimatedRemainingLifetimeException: " + driveEstimatedRemainingLifetimeException);
-                                                    }
+                                                }
+                                            }
+
+                                            NodeList driveDescriptionNodes = parentDriveElement.getElementsByTagName("Description");
+                                            if (driveDescriptionNodes != null && driveDescriptionNodes.getLength() > 0 && driveDescriptionNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
+                                                String driveDescriptionText = driveDescriptionNodes.item(0).getTextContent();
+                                                if (!driveDescriptionText.isEmpty() && !driveDescriptionText.contains("is PERFECT.")) {
+                                                    driveHealthWarning = true;
+                                                }
+                                            }
+
+                                            NodeList driveTipNodes = parentDriveElement.getElementsByTagName("Tip");
+                                            if (driveTipNodes != null && driveTipNodes.getLength() > 0 && driveTipNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
+                                                String driveTipText = driveTipNodes.item(0).getTextContent();
+                                                if (!driveTipText.isEmpty() && !driveTipText.equals("No actions needed.")) {
+                                                    driveHealthWarning = true;
                                                 }
                                             }
                                         }
@@ -1483,16 +1654,21 @@ public final class GetComputerSpecs {
                     }
                 }
 
-                // Battery Capacity for Linux
+                // Battery Health for Linux
                 String[] allPowerSources = new CommandReader(new String[]{"/usr/bin/upower", "-e"}).getOutputLines();
 
                 for (String thisPowerSource : allPowerSources) {
-                    String[] thisBatteryInfo = new CommandReader("/usr/bin/upower -i " + thisPowerSource + " | /bin/egrep '(vendor|model|energy-full|voltage|capacity)'").getOutputLines();
+                    String[] thisBatteryInfo = new CommandReader(new String[]{"/usr/bin/upower", "-i", thisPowerSource}).getOutputLines();
 
                     String thisBatteryVendor = "";
                     String thisBatteryModel = "";
+                    String thisBatteryState = "";
+                    String thisBatteryEnergy = "";
                     String thisBatteryEnergyFull = "";
+                    String thisBatteryEnergyRate = "";
                     String thisBatteryVoltage = "";
+                    String thisBatteryChargeCycles = "";
+                    String thisBatteryPercentage = "";
                     String thisBatteryCapacity = "";
 
                     for (String thisBatteryInfoLine : thisBatteryInfo) {
@@ -1500,8 +1676,14 @@ public final class GetComputerSpecs {
                             thisBatteryVendor = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
                         } else if (thisBatteryInfoLine.startsWith("  model:")) {
                             thisBatteryModel = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                        } else if (thisBatteryInfoLine.startsWith("    state:")) {
+                            thisBatteryState = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                        } else if (thisBatteryInfoLine.startsWith("    energy:")) {
+                            thisBatteryEnergy = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
                         } else if (thisBatteryInfoLine.startsWith("    energy-full:")) {
                             thisBatteryEnergyFull = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                        } else if (thisBatteryInfoLine.startsWith("    energy-rate:")) {
+                            thisBatteryEnergyRate = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
                         } else if (thisBatteryInfoLine.startsWith("    voltage:")) {
                             try {
                                 double batteryVoltageDouble = Double.parseDouble(thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).replaceAll("[^0-9.]", ""));
@@ -1513,7 +1695,7 @@ public final class GetComputerSpecs {
                                     double batteryDesignVoltageDouble = Double.parseDouble(thisBatteryDesignVoltage);
 
                                     if (batteryVoltageDouble < (batteryDesignVoltageDouble - 0.1)) {
-                                        batteryHealthWarning.add("Low Voltage");
+                                        batteryHealthWarningArray.add("Low Voltage");
                                         thisBatteryVoltage += " of " + new DecimalFormat("#.#").format(batteryDesignVoltageDouble) + " V";
                                     }
                                 }
@@ -1524,15 +1706,22 @@ public final class GetComputerSpecs {
                                     System.out.println("batteryVoltageException: " + batteryVoltageException);
                                 }
                             }
+                        } else if (thisBatteryInfoLine.startsWith("    charge-cycles:")) {
+                            thisBatteryChargeCycles = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                        } else if (thisBatteryInfoLine.startsWith("    percentage:")) {
+                            thisBatteryPercentage = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
                         } else if (thisBatteryInfoLine.startsWith("    capacity:")) {
                             try {
                                 double batteryCapacityDouble = Double.parseDouble(thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).replaceAll("[^0-9.]", ""));
                                 thisBatteryCapacity = new DecimalFormat("#.#").format(batteryCapacityDouble) + "%";
 
                                 if (batteryCapacityDouble < 51) {
-                                    batteryHealthError.add("Capacity <= 50%");
+                                    batteryHealthErrorArray.add("Capacity <= 50%");
                                 } else if (batteryCapacityDouble < 71) {
-                                    batteryHealthWarning.add("Capacity <= 70%");
+                                    batteryHealthWarningArray.add("Capacity <= 70%");
+                                } else if ((batteryCapacityDouble == 100) && brand.equals("HP")) {
+                                    thisBatteryCapacity = "UNKNOWN CAPACITY (Update HP Firmware)";
+                                    batteryHealthWarningArray.add("HP Firmware Update Required for Accurate Battery Percentage");
                                 }
                             } catch (NumberFormatException batteryCapacityException) {
                                 thisBatteryCapacity = "";
@@ -1544,78 +1733,45 @@ public final class GetComputerSpecs {
                         }
                     }
 
+                    String thisBatteryCycleCount = "";
+
+                    try {
+                        int batteryCycleCount = Integer.parseInt(thisBatteryChargeCycles);
+                        if (batteryCycleCount > 0) {
+                            thisBatteryCycleCount = batteryCycleCount + " Cycle" + ((batteryCycleCount == 1) ? "" : "s");
+
+                            if (batteryCycleCount >= 1000) {
+                                batteryHealthErrorArray.add("Cycles >= 1000");
+                            } else if (batteryCycleCount >= 800) {
+                                batteryHealthWarningArray.add("Cycles >= 800");
+                            }
+                        }
+                    } catch (NumberFormatException batteryCycleCountException) {
+                        if (isTestMode) {
+                            System.out.println("batteryCycleCountException: " + batteryCycleCountException);
+                        }
+                    }
+
+                    if (thisBatteryCapacity.equals("100%") && thisBatteryEnergy.equals("0 Wh") && thisBatteryEnergyRate.equals("0 W") && thisBatteryPercentage.equals("0%")) {
+                        // Some systems (specifically HPs) show valid "energy-full" values and a "capacity" of "100%" even if there is NO BATTERY,
+                        // so ignore any battery values that have a "capacity" of "100%", current "energy" of "0 Wh", "energy-rate" of "0 W", and a "percentage" of "0%".
+
+                        if (!brand.equals("HP")) { // Already set note to update firmware for HPs with 100% capacity.
+                            thisBatteryCapacity = "";
+                        }
+                    }
+
                     if (!thisBatteryCapacity.isEmpty()) {
+                        if ((thisBatteryState.equals("charging") || thisBatteryState.equals("pending-charge")) && thisBatteryPercentage.startsWith("0") && thisBatteryEnergyRate.startsWith("0")) {
+                            batteryHealthWarningArray.add("Not Charging");
+                        }
+
                         if (thisBatteryEnergyFull.equals("0 Wh")) {
                             thisBatteryCapacity = "0%";
-                            batteryHealthError.add("Capacity 0%");
+                            batteryHealthErrorArray.add("Capacity 0%");
                         }
 
-                        if (batteryCapacity.equals("N/A")) {
-                            batteryCapacity = thisBatteryCapacity + (thisBatteryVoltage.isEmpty() ? "" : " (" + thisBatteryVoltage + ")");
-                        } else {
-                            batteryCapacity += " + " + thisBatteryCapacity + (thisBatteryVoltage.isEmpty() ? "" : " (" + thisBatteryVoltage + ")");
-                        }
-                    }
-                }
-
-                // Wireless and Ethernet MAC for Linux
-                String[] allNetworkDeviceInfo = new CommandReader(new String[]{"/usr/bin/nmcli", "device", "show"}).getOutputLines();
-
-                boolean nextHwAddrIsEthernetMAC = false;
-
-                for (String thisNetworkDeviceInfoLine : allNetworkDeviceInfo) {
-                    if (thisNetworkDeviceInfoLine.startsWith("GENERAL.TYPE:")) {
-                        nextHwAddrIsEthernetMAC = false;
-
-                        String thisNetworkDeviceType = thisNetworkDeviceInfoLine.substring(thisNetworkDeviceInfoLine.indexOf(":") + 1).trim().toLowerCase();
-                        if (thisNetworkDeviceType.equals("ethernet")) {
-                            nextHwAddrIsEthernetMAC = true;
-                        } else if (thisNetworkDeviceType.equals("wifi")) {
-                            wireless = "Wi-Fi Detected";
-                        }
-
-                    } else if (nextHwAddrIsEthernetMAC && thisNetworkDeviceInfoLine.startsWith("GENERAL.HWADDR:")) {
-                        String thisEthernetMAC = thisNetworkDeviceInfoLine.substring(thisNetworkDeviceInfoLine.indexOf(":") + 1).trim().toUpperCase();
-
-                        if (ethernetMAC.equals("N/A")) {
-                            ethernetMAC = thisEthernetMAC;
-                        } else {
-                            ethernetMAC += " + " + thisEthernetMAC;
-                        }
-                    }
-                }
-
-                // Bluetooth for Linux
-                String[] bluetoothInfo = new CommandReader(new String[]{"/usr/bin/btmgmt", "info"}).getOutputLinesContaining(new String[]{" version ", "supported settings:"});
-
-                if (bluetoothInfo.length > 0) {
-                    String bluetoothVersion = "";
-                    String bluetoothFeatures = "";
-
-                    for (String thisBluetoothInfoLine : bluetoothInfo) {
-                        if (thisBluetoothInfoLine.trim().startsWith("addr ") && thisBluetoothInfoLine.contains(" version ")) {
-                            String bluetoothHCIversion = thisBluetoothInfoLine.split(" version ")[1].split(" ")[0].replaceAll("[^0-9]", "");
-
-                            if (!bluetoothHCIversion.isEmpty()) {
-                                // HCI/LMP version references: https://support.microsoft.com/en-us/help/4524769/windows-10-what-bluetooth-version-is-on-my-device
-                                String[] bluetoothHCIversionTranslation = {"1.0b", "1.1", "1.2", "2.0", "2.1", "3.0", "4.0", "4.1", "4.2", "5.0", "5.1", "5.2"};
-
-                                int bluetoothHCIversionInt = Integer.parseInt(bluetoothHCIversion);
-                                if (bluetoothHCIversionTranslation.length > bluetoothHCIversionInt) {
-                                    bluetoothVersion = " " + bluetoothHCIversionTranslation[bluetoothHCIversionInt] + " ";
-                                } else {
-                                    bluetoothVersion = " (HCI " + bluetoothHCIversion + ") ";
-                                }
-                            }
-                        } else if (thisBluetoothInfoLine.trim().startsWith("supported settings:") && thisBluetoothInfoLine.contains(" le ")) {
-                            bluetoothFeatures = " (Supports BLE)";
-                        }
-                    }
-
-                    if (wireless.equals("N/A")) {
-                        wireless = "Bluetooth" + bluetoothVersion + "Detected" + bluetoothFeatures;
-                    } else {
-                        wireless += " + Bluetooth" + bluetoothVersion + "Detected" + bluetoothFeatures;
+                        batteryHealthArray.add(thisBatteryCapacity + (thisBatteryVoltage.isEmpty() ? (thisBatteryCycleCount.isEmpty() ? "" : " (" + thisBatteryCycleCount + ")") : " (" + (thisBatteryCycleCount.isEmpty() ? "" : thisBatteryCycleCount + ", ") + thisBatteryVoltage + ")"));
                     }
                 }
 
@@ -1743,7 +1899,7 @@ public final class GetComputerSpecs {
                     + "Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion' -Name ProductName,DisplayVersion,ReleaseId | Format-List ProductName,DisplayVersion,ReleaseId;"
                     // Win32_ComputerSystemProduct
                     + "Write-Output 'Windows Hardware Info Class = Win32_ComputerSystemProduct';"
-                    + "Get-CimInstance Win32_ComputerSystemProduct -Property Vendor,Version,Name,IdentifyingNumber | Format-List Vendor,Version,Name,IdentifyingNumber;"
+                    + "Get-CimInstance Win32_ComputerSystemProduct -Property Vendor,Version,Name,IdentifyingNumber,UUID | Format-List Vendor,Version,Name,IdentifyingNumber,UUID;"
                     // Win32_BaseBoard
                     + "Write-Output 'Windows Hardware Info Class = Win32_BaseBoard';"
                     + "Get-CimInstance Win32_BaseBoard -Property Manufacturer,Version,Product,SerialNumber | Format-List Manufacturer,Version,Product,SerialNumber;"
@@ -1756,10 +1912,10 @@ public final class GetComputerSpecs {
                     + (isWindowsPE
                     // Win32_NetworkAdapter
                     ? "Write-Output 'Windows Hardware Info Class = Win32_NetworkAdapter';"
-                    + "Get-CimInstance Win32_NetworkAdapter -Filter 'PhysicalAdapter = True' -Property MACAddress,NetConnectionID | Format-List MACAddress,NetConnectionID;"
+                    + "Get-CimInstance Win32_NetworkAdapter -Filter 'PhysicalAdapter = True' -Property MACAddress,Name,NetConnectionID | Format-List MACAddress,Name,NetConnectionID;"
                     // NetAdapter
                     : "Write-Output 'Windows Hardware Info Class = Get-NetAdapter';" // DO NOT want to use "-Physical" arg here because we want Bluetooth as well.
-                    + "Get-NetAdapter | Format-List MacAddress,PhysicalMediaType;")
+                    + "Get-NetAdapter | Format-List MacAddress,InterfaceDescription,PhysicalMediaType;")
                     // Win32_SystemEnclosure
                     + "Write-Output 'Windows Hardware Info Class = Win32_SystemEnclosure';"
                     + "Get-CimInstance Win32_SystemEnclosure -Property ChassisTypes | Format-List ChassisTypes;"
@@ -1774,7 +1930,7 @@ public final class GetComputerSpecs {
                     + "Get-CimInstance Win32_PhysicalMemory -Filter \\\"TypeDetail <> '4096'\\\" -Property Tag,Capacity,MemoryType,SMBIOSMemoryType,Speed,MaxVoltage | Format-List Tag,Capacity,MemoryType,SMBIOSMemoryType,Speed,MaxVoltage;"
                     // Get-PhysicalDisk
                     + "Write-Output 'Windows Hardware Info Class = Get-PhysicalDisk';"
-                    + "Get-PhysicalDisk | Where-Object { ($_.BusType -eq 'SATA') -or ($_.BusType -eq 'ATA') -or ($_.BusType -eq 'NVMe') -or ($_.BusType -eq 'RAID') } | Format-List HealthStatus,BusType,MediaType,Model,Size;"
+                    + "Get-PhysicalDisk | Where-Object { ($_.BusType -eq 'SATA') -or ($_.BusType -eq 'ATA') -or ($_.BusType -eq 'NVMe') -or ($_.BusType -eq 'RAID') -or (($_.BusType -eq 'SD') -and ($_.PhysicalLocation -like 'Integrated*')) } | Format-List HealthStatus,BusType,MediaType,Model,SerialNumber,FruId,Size;"
                     // Win32_VideoController
                     + "Write-Output 'Windows Hardware Info Class = Win32_VideoController';"
                     + "Get-CimInstance Win32_VideoController -Property InstalledDisplayDrivers,AdapterCompatibility,Name,ConfigManagerErrorCode,CurrentHorizontalResolution,CurrentVerticalResolution | Format-List InstalledDisplayDrivers,AdapterCompatibility,Name,ConfigManagerErrorCode,CurrentHorizontalResolution,CurrentVerticalResolution;"
@@ -1793,10 +1949,10 @@ public final class GetComputerSpecs {
                     + "$pnpEntitiesWithVendorsAndDevices | Format-List ConfigManagerErrorCode,Name,CompatibleIDwithClass,DeviceID;"
                     // Win32_Battery
                     + "Write-Output 'Windows Hardware Info Class = Win32_Battery';" // Some computers (ex. Lenovo G700, Lenovo G50) don't list any info in Win32_PortableBattery and barely any in Win32_Battery, but retrieving DesignVoltage seems to be reliable and the rest can come from the classes below.
-                    + "Get-CimInstance Win32_Battery -Property DesignVoltage | Format-List DesignVoltage;"
+                    + "Get-CimInstance Win32_Battery -Property DesignVoltage,EstimatedChargeRemaining | Format-List DesignVoltage,EstimatedChargeRemaining;"
                     // BatteryStatus
                     + "Write-Output 'Windows Hardware Info Class = BatteryStatus';"
-                    + "Get-CimInstance BatteryStatus -Namespace ROOT\\WMI -Property Voltage | Format-List Voltage;"
+                    + "Get-CimInstance BatteryStatus -Namespace ROOT\\WMI -Property ChargeRate,Charging,DischargeRate,RemainingCapacity,Voltage | Format-List ChargeRate,Charging,DischargeRate,RemainingCapacity,Voltage;"
                     // BatteryStaticData
                     + "Write-Output 'Windows Hardware Info Class = BatteryStaticData';" // For some reason, using Get-CimInstance instead of Get-WmiObject for this class always fails.
                     + "Get-WmiObject -Namespace ROOT\\WMI -Query 'SELECT DesignedCapacity FROM BatteryStaticData' | Format-List DesignedCapacity;"
@@ -1820,6 +1976,7 @@ public final class GetComputerSpecs {
                 String osBuildNumber = "";
 
                 String thisNetworkAdapterMAC = "";
+                String thisNetworkAdapterName = "";
 
                 int ramSlotCount = 0;
                 long ramMaxKilobytes = 0L;
@@ -1837,14 +1994,20 @@ public final class GetComputerSpecs {
 
                 String thisAudioManufacturer = "";
 
+                String pnpDeviceName = "";
                 String pnpDeviceConfigManagerErrorCode = "";
                 String pnpDeviceCompatibleIDwithClass = "";
 
-                String pnpGPU = "";
-                String pnpAudio = "";
-                String pnpWireless = "";
+                ArrayList<String> pnpGPU = new ArrayList<>();
+                ArrayList<String> pnpAudio = new ArrayList<>();
+                ArrayList<String> pnpWireless = new ArrayList<>();
 
                 ArrayList<String> windowsBatteryDesignVoltages = new ArrayList<>();
+                ArrayList<String> windowsBatteryChargePercentages = new ArrayList<>();
+                ArrayList<String> windowsBatteryChargeRates = new ArrayList<>();
+                ArrayList<String> windowsBatteryChargingStatuses = new ArrayList<>();
+                ArrayList<String> windowsBatteryDischargeRates = new ArrayList<>();
+                ArrayList<String> windowsBatteryRemainingCapacities = new ArrayList<>();
                 ArrayList<String> windowsBatteryCurrentVoltages = new ArrayList<>();
                 ArrayList<String> windowsBatteryDesignCapacities = new ArrayList<>();
                 ArrayList<String> windowsBatteryFullChargeCapacities = new ArrayList<>();
@@ -1900,6 +2063,8 @@ public final class GetComputerSpecs {
                                             systemProductName = thisWindowsHardwareInfoProperty;
                                         } else if (thisWindowsHardwareInfoLine.startsWith("IdentifyingNumber")) {
                                             serial = thisWindowsHardwareInfoProperty;
+                                        } else if (thisWindowsHardwareInfoLine.startsWith("UUID")) {
+                                            biosUUID = thisWindowsHardwareInfoProperty.toUpperCase();
                                         }
                                     }
 
@@ -1911,7 +2076,7 @@ public final class GetComputerSpecs {
                                         } else if (thisWindowsHardwareInfoLine.startsWith("Version") && thisWindowsHardwareInfoProperty.replaceAll("[^A-Za-z0-9]", "").length() > 4) {
                                             motherboardVersion = thisWindowsHardwareInfoProperty;
                                         } else if (thisWindowsHardwareInfoLine.startsWith("Product")) {
-                                            motherboardProduct = thisWindowsHardwareInfoProperty;
+                                            motherboardModel = thisWindowsHardwareInfoProperty;
                                         } else if (thisWindowsHardwareInfoLine.startsWith("SerialNumber")) {
                                             motherboardSerial = thisWindowsHardwareInfoProperty;
                                         }
@@ -1953,16 +2118,18 @@ public final class GetComputerSpecs {
                                 case "Get-NetAdapter": // Get-NetAdapter isn't available in WinPE, so Win32_NetworkAdapter and Win32_PnPEntity will be used instead
                                     if (thisWindowsHardwareInfoLine.startsWith("MacAddress")) {
                                         thisNetworkAdapterMAC = thisWindowsHardwareInfoProperty.replace("-", ":");
+                                    } else if (thisWindowsHardwareInfoLine.startsWith("InterfaceDescription")) {
+                                        thisNetworkAdapterName = cleanDeviceModel(thisWindowsHardwareInfoProperty);
                                     } else if (thisWindowsHardwareInfoLine.startsWith("PhysicalMediaType")) {
                                         if (!thisNetworkAdapterMAC.isEmpty()) {
                                             if (thisWindowsHardwareInfoProperty.equals("802.3")) {
-                                                if (ethernetMAC.equals("N/A")) {
-                                                    ethernetMAC = thisNetworkAdapterMAC;
-                                                } else {
-                                                    ethernetMAC += " + " + thisNetworkAdapterMAC;
-                                                }
-                                            } else if (!wireless.contains("Wi-Fi Detected") && thisWindowsHardwareInfoProperty.equals("Native 802.11")) {
+                                                ethernetMACarray.add(thisNetworkAdapterMAC);
+                                            } else if (!getWireless().contains("Wi-Fi Detected") && thisWindowsHardwareInfoProperty.equals("Native 802.11")) {
                                                 String wiFiWithProtocols = "Wi-Fi Detected (UNKNOWN Protocols - Wi-Fi DISABLED)";
+                                                if (!thisNetworkAdapterName.isEmpty()) {
+                                                    wiFiWithProtocols = "Wi-Fi Detected (" + thisNetworkAdapterName + ")";
+                                                }
+
                                                 String windowsWiFiProtocols = new CommandReader(new String[]{"\\Windows\\System32\\netsh.exe", "wlan", "show", "drivers"}).getFirstOutputLineContaining("Radio types supported");
                                                 if (windowsWiFiProtocols.contains("802.11")) {
                                                     ArrayList<String> wifiVersionsAndProtocols = new ArrayList<>();
@@ -2002,20 +2169,15 @@ public final class GetComputerSpecs {
                                                     wiFiWithProtocols = "Wi-Fi Detected (Supports " + String.join(", ", wifiVersionsAndProtocols) + ")";
                                                 }
 
-                                                if (wireless.equals("N/A")) {
-                                                    wireless = wiFiWithProtocols;
-                                                } else {
-                                                    wireless = wiFiWithProtocols + " + " + wireless;
-                                                }
-                                            } else if (!wireless.contains("Bluetooth Detected") && thisWindowsHardwareInfoProperty.equals("BlueTooth")) {
-                                                if (wireless.equals("N/A")) {
-                                                    wireless = "Bluetooth Detected";
-                                                } else {
-                                                    wireless += " + Bluetooth Detected";
-                                                }
+                                                wirelessArray.add(0, wiFiWithProtocols);
+                                            } else if (!getWireless().contains("Cellular Detected") && thisWindowsHardwareInfoProperty.equals("Wireless WAN")) {
+                                                wirelessArray.add("Cellular Detected" + ((thisNetworkAdapterName.isEmpty() || thisNetworkAdapterName.contains("Generic Mobile Broadband")) ? "" : " (" + thisNetworkAdapterName + ")"));
+                                            } else if (!getWireless().contains("Bluetooth Detected") && thisWindowsHardwareInfoProperty.equals("BlueTooth")) {
+                                                wirelessArray.add("Bluetooth Detected");
                                             }
 
                                             thisNetworkAdapterMAC = "";
+                                            thisNetworkAdapterName = "";
                                         }
                                     }
 
@@ -2023,18 +2185,26 @@ public final class GetComputerSpecs {
                                 case "Win32_NetworkAdapter": // Win32_NetworkAdapter will be used in WinPE since Get-NetAdapter isn't available.
                                     if (thisWindowsHardwareInfoLine.startsWith("MACAddress")) {
                                         thisNetworkAdapterMAC = thisWindowsHardwareInfoProperty;
+                                    } else if (thisWindowsHardwareInfoLine.startsWith("Name")) {
+                                        thisNetworkAdapterName = cleanDeviceModel(thisWindowsHardwareInfoProperty);
                                     } else if (thisWindowsHardwareInfoLine.startsWith("NetConnectionID")) {
                                         if (!thisNetworkAdapterMAC.isEmpty()) {
                                             if (thisWindowsHardwareInfoProperty.equals("Ethernet")) {
-                                                if (ethernetMAC.equals("N/A")) {
-                                                    ethernetMAC = thisNetworkAdapterMAC;
-                                                } else {
-                                                    ethernetMAC += " + " + thisNetworkAdapterMAC;
-                                                }
-                                            } // Wi-Fi and Bluetooth will never be listed in Win32_NetworkAdapter in WinPE (even when not filtering for "PhysicalAdapter = True"), so Win32_PnPEntity is checked for Wi-Fi in WindowsPE
-
-                                            thisNetworkAdapterMAC = "";
+                                                ethernetMACarray.add(thisNetworkAdapterMAC);
+                                            } else if (!getWireless().contains("Wi-Fi Detected") && thisWindowsHardwareInfoProperty.equals("Wi-Fi")) {
+                                                // Wi-Fi may not be listed (and Bluetooth will never be listed) in Win32_NetworkAdapter in WinPE (even when not filtering for "PhysicalAdapter = True"),
+                                                // so Win32_PnPEntity is also checked for Wi-Fi and Bluetooth in WindowsPE.
+                                                wirelessArray.add(0, "Wi-Fi Detected" + (thisNetworkAdapterName.isEmpty() ? "" : " (" + thisNetworkAdapterName + ")"));
+                                            }
                                         }
+
+                                        if (!getWireless().contains("Cellular Detected") && thisWindowsHardwareInfoProperty.equals("Cellular")) { // Cellular may not have MAC Address in WinPE, but still want to detect it.
+                                            // Win32_PnPEntity is also checked for Cellular in WindowsPE.
+                                            wirelessArray.add("Cellular Detected" + ((thisNetworkAdapterName.isEmpty() || thisNetworkAdapterName.contains("Generic Mobile Broadband")) ? "" : " (" + thisNetworkAdapterName + ")"));
+                                        }
+
+                                        thisNetworkAdapterMAC = "";
+                                        thisNetworkAdapterName = "";
                                     }
 
                                     break;
@@ -2348,25 +2518,35 @@ public final class GetComputerSpecs {
                                         }
                                     } else if (thisWindowsHardwareInfoLine.startsWith("Model")) {
                                         thisDriveModel = thisWindowsHardwareInfoProperty.trim().replace("(", "").replace(")", "").replaceAll("\\s{2,}", " "); // NOTE: Remove all parens (which shouldn't normally exist anyways) to not break removing models when truncating storage line for PCsCRM.
+                                    } else if (thisWindowsHardwareInfoLine.startsWith("SerialNumber")) {
+                                        if (!thisWindowsHardwareInfoProperty.isEmpty() && !thisDriveBusType.equals("NVMe")) { // NVMe drive seem to not get the actual serial number filled in this field,
+                                            storageSerialsArray.add(thisWindowsHardwareInfoProperty);
+                                        }
+                                    } else if (thisWindowsHardwareInfoLine.startsWith("FruId")) {
+                                        if (!thisWindowsHardwareInfoProperty.isEmpty() && thisDriveBusType.equals("NVMe")) { // so use "FruId" for NVMe drive serial numbers instead (which matches the serial from "lsblk" in Linux): https://www.reddit.com/r/sysadmin/comments/1m1qv1j/powershell_wont_give_me_the_real_nvme_serial/
+                                            storageSerialsArray.add(thisWindowsHardwareInfoProperty);
+                                        }
                                     } else if (thisWindowsHardwareInfoLine.startsWith("Size")) {
                                         if (!thisDriveHealthStatus.equals("Healthy")) {
                                             driveHealthWarning = true;
                                         }
 
                                         try {
-                                            double thisSize = (Double.parseDouble(thisWindowsHardwareInfoProperty) / 1000 / 1000 / 1000);
+                                            double thisDriveGB = (Double.parseDouble(thisWindowsHardwareInfoProperty) / 1000 / 1000 / 1000);
+                                            String thisDriveSize;
+                                            if (thisDriveGB < 1000) {
+                                                thisDriveSize = new DecimalFormat("#").format(thisDriveGB) + " GB";
+                                            } else {
+                                                thisDriveSize = new DecimalFormat("#").format((thisDriveGB / 1000)) + " TB";
+                                            }
 
-                                            String thisDisk = new DecimalFormat("#").format(thisSize) + " GB " + (thisDriveBusType.equals("NVMe") ? "NVMe" : (thisDriveBusType.equals("RAID") ? ("RAID" + (thisDriveMediaType.isEmpty() ? "" : " " + thisDriveMediaType)) : thisDriveMediaType));
+                                            String thisDisk = thisDriveSize + " " + (thisDriveBusType.equals("NVMe") ? "NVMe" : (thisDriveBusType.equals("SD") ? "eMMC" : (thisDriveBusType.equals("RAID") ? ("RAID" + (thisDriveMediaType.isEmpty() ? "" : " " + thisDriveMediaType)) : thisDriveMediaType)));
 
                                             if (!thisDriveModel.isEmpty()) {
                                                 thisDisk += " (" + thisDriveModel + ")";
                                             }
 
-                                            if (storage.equals("N/A")) {
-                                                storage = thisDisk;
-                                            } else {
-                                                storage += " + " + thisDisk;
-                                            }
+                                            storageArray.add(thisDisk);
                                         } catch (NumberFormatException hardDriveSizeException) {
                                             if (isTestMode) {
                                                 System.out.println("hardDriveSizeException: " + hardDriveSizeException);
@@ -2384,10 +2564,8 @@ public final class GetComputerSpecs {
                                         if (thisWindowsHardwareInfoProperty.isEmpty()) {
                                             String thisGPUerrorString = "DRIVER NOT INSTALLED";
 
-                                            if (gpuErrorString.isEmpty()) {
-                                                gpuErrorString = thisGPUerrorString;
-                                            } else if (!gpuErrorString.contains(thisGPUerrorString)) {
-                                                gpuErrorString = gpuErrorString + " + " + thisGPUerrorString;
+                                            if (!gpuErrorArray.contains(thisGPUerrorString)) {
+                                                gpuErrorArray.add(thisGPUerrorString);
                                             }
                                         }
                                     } else if (thisWindowsHardwareInfoLine.startsWith("AdapterCompatibility")) {
@@ -2399,10 +2577,8 @@ public final class GetComputerSpecs {
                                             if (thisGraphicsManufacturer.equals("(Standard display types)") || thisGraphicsDevice.equals("Microsoft Basic Display")) {
                                                 String thisGPUerrorString = "DRIVER NOT INSTALLED";
 
-                                                if (gpuErrorString.isEmpty()) {
-                                                    gpuErrorString = thisGPUerrorString;
-                                                } else if (!gpuErrorString.contains(thisGPUerrorString)) {
-                                                    gpuErrorString = gpuErrorString + " + " + thisGPUerrorString;
+                                                if (!gpuErrorArray.contains(thisGPUerrorString)) {
+                                                    gpuErrorArray.add(thisGPUerrorString);
                                                 }
                                             } else if (!thisGraphicsDevice.contains(thisGraphicsManufacturer)) {
                                                 thisGraphicsDevice = thisGraphicsManufacturer + " " + thisGraphicsDevice;
@@ -2411,18 +2587,14 @@ public final class GetComputerSpecs {
                                             thisGraphicsManufacturer = "";
                                         }
 
-                                        if (gpu.equals("N/A")) {
-                                            gpu = thisGraphicsDevice;
-                                        } else if (!gpu.contains(thisGraphicsDevice)) {
-                                            gpu += " + " + thisGraphicsDevice;
+                                        if (!gpuArray.contains(thisGraphicsDevice)) { // TODO: Should this check against getFullGPU() instead of gpuArray?
+                                            gpuArray.add(thisGraphicsDevice);
                                         }
                                     } else if (!isWindowsPE && thisWindowsHardwareInfoLine.startsWith("ConfigManagerErrorCode") && !thisWindowsHardwareInfoProperty.equals("0")) {
                                         String thisGPUerrorString = "DRIVER ERROR CODE " + thisWindowsHardwareInfoProperty;
 
-                                        if (gpuErrorString.isEmpty()) {
-                                            gpuErrorString = thisGPUerrorString;
-                                        } else if (!gpuErrorString.contains(thisGPUerrorString)) {
-                                            gpuErrorString = gpuErrorString + " + " + thisGPUerrorString;
+                                        if (!gpuErrorArray.contains(thisGPUerrorString)) {
+                                            gpuErrorArray.add(thisGPUerrorString);
                                         }
                                     } else if (!screenResolution.contains("x") && thisWindowsHardwareInfoLine.startsWith("CurrentHorizontalResolution")) {
                                         screenResolution = thisWindowsHardwareInfoProperty;
@@ -2442,10 +2614,8 @@ public final class GetComputerSpecs {
                                         }
 
                                         if (!thisAudioDevice.equals("(Generic USB Audio) USB Audio")) {
-                                            if (audio.equals("N/A")) {
-                                                audio = thisAudioDevice;
-                                            } else if (!audio.contains(thisAudioDevice)) {
-                                                audio += " + " + thisAudioDevice;
+                                            if (!audioArray.contains(thisAudioDevice)) { // TODO: Should this check against getFullAudio() instead of audioArray?
+                                                audioArray.add(thisAudioDevice);
                                             }
                                         }
 
@@ -2453,10 +2623,8 @@ public final class GetComputerSpecs {
                                     } else if (!isWindowsPE && thisWindowsHardwareInfoLine.startsWith("ConfigManagerErrorCode") && !thisWindowsHardwareInfoProperty.equals("0")) {
                                         String thisAudioErrorString = "DRIVER ERROR CODE " + thisWindowsHardwareInfoProperty;
 
-                                        if (audioErrorString.isEmpty()) {
-                                            audioErrorString = thisAudioErrorString;
-                                        } else if (!audioErrorString.contains(thisAudioErrorString)) {
-                                            audioErrorString = audioErrorString + " + " + thisAudioErrorString;
+                                        if (!audioErrorArray.contains(thisAudioErrorString)) {
+                                            audioErrorArray.add(thisAudioErrorString);
                                         }
                                     }
 
@@ -2466,7 +2634,8 @@ public final class GetComputerSpecs {
                                     if (thisWindowsHardwareInfoLine.startsWith("ConfigManagerErrorCode")) {
                                         pnpDeviceConfigManagerErrorCode = thisWindowsHardwareInfoProperty;
                                     } else if (thisWindowsHardwareInfoLine.startsWith("Name")) {
-                                        if (thisWindowsHardwareInfoProperty.contains("touch screen") && !pnpDeviceConfigManagerErrorCode.equals("CM_PROB_PHANTOM")) {
+                                        pnpDeviceName = cleanDeviceModel(thisWindowsHardwareInfoProperty);
+                                        if (pnpDeviceName.contains("touch screen") && !pnpDeviceConfigManagerErrorCode.equals("CM_PROB_PHANTOM")) {
                                             hasTouchscreen = true; // Ignore PHANTOM (Error Code 45) touch screens because it means an external touch screen was connected but isn't anymore.
                                         }
                                     } else if (thisWindowsHardwareInfoLine.startsWith("CompatibleIDwithClass")) {
@@ -2483,26 +2652,26 @@ public final class GetComputerSpecs {
 
                                             int ccIndex;
                                             int classIndex;
-                                            if ((ccIndex = pnpDeviceCompatibleIDwithClass.indexOf("CC_")) > -1) {
+                                            if (((ccIndex = pnpDeviceCompatibleIDwithClass.indexOf("CC_")) > -1) && (pnpDeviceCompatibleIDwithClass.length() >= (ccIndex + 5))) {
                                                 pnpDeviceClassCode = pnpDeviceCompatibleIDwithClass.substring(ccIndex + 3, ccIndex + 5).toLowerCase();
 
-                                                if (pnpDeviceCompatibleIDwithClass.length() >= ccIndex + 7) {
+                                                if (pnpDeviceCompatibleIDwithClass.length() >= (ccIndex + 7)) {
                                                     pnpDeviceSubClassCode = pnpDeviceCompatibleIDwithClass.substring(ccIndex + 5, ccIndex + 7).toLowerCase();
 
-                                                    if (pnpDeviceCompatibleIDwithClass.length() >= ccIndex + 9) {
+                                                    if (pnpDeviceCompatibleIDwithClass.length() >= (ccIndex + 9)) {
                                                         pnpDeviceProgProtCode = pnpDeviceCompatibleIDwithClass.substring(ccIndex + 7, ccIndex + 9).toLowerCase();
                                                     }
                                                 }
-                                            } else if ((classIndex = pnpDeviceCompatibleIDwithClass.indexOf("Class_")) > -1) {
+                                            } else if (((classIndex = pnpDeviceCompatibleIDwithClass.indexOf("Class_")) > -1) && (pnpDeviceCompatibleIDwithClass.length() >= (classIndex + 8))) {
                                                 pnpDeviceClassCode = pnpDeviceCompatibleIDwithClass.substring(classIndex + 6, classIndex + 8).toLowerCase();
 
                                                 int subClassIndex;
-                                                if ((subClassIndex = pnpDeviceCompatibleIDwithClass.indexOf("SubClass_")) > -1) {
+                                                if (((subClassIndex = pnpDeviceCompatibleIDwithClass.indexOf("SubClass_")) > -1) && (pnpDeviceCompatibleIDwithClass.length() >= (subClassIndex + 11))) {
                                                     pnpDeviceSubClassCode = pnpDeviceCompatibleIDwithClass.substring(subClassIndex + 9, subClassIndex + 11).toLowerCase();
                                                 }
 
                                                 int protIndex;
-                                                if ((protIndex = pnpDeviceCompatibleIDwithClass.indexOf("Prot_")) > -1) {
+                                                if (((protIndex = pnpDeviceCompatibleIDwithClass.indexOf("Prot_")) > -1) && (pnpDeviceCompatibleIDwithClass.length() >= (protIndex + 7))) {
                                                     pnpDeviceProgProtCode = pnpDeviceCompatibleIDwithClass.substring(protIndex + 5, protIndex + 7).toLowerCase();
                                                 }
                                             }
@@ -2530,23 +2699,19 @@ public final class GetComputerSpecs {
                                                                 // Do just a few of the most common replacements for codes to brand names.
                                                                 thisGPUid = thisGPUid.replace("8086-", "Intel-").replace("10de-", "NVIDIA-").replace("1002-", "AMD-").replace("1022-", "AMD-");
 
-                                                                if (gpuIDs.isEmpty()) {
-                                                                    gpuIDs = thisGPUid;
-                                                                } else if (!gpuIDs.contains(thisGPUid)) {
-                                                                    gpuIDs += "+" + thisGPUid;
+                                                                if (!gpuIDsArray.contains(thisGPUid)) {
+                                                                    gpuIDsArray.add(thisGPUid);
                                                                 }
                                                             }
                                                         }
 
                                                         if (!pnpDeviceConfigManagerErrorCode.equals("CM_PROB_PHANTOM")) {
                                                             // Want some PHANTOM (Error Code 45) devices for gpuIDs, but not listed in GPU field.
-                                                            if (gpu.equals("N/A") || gpuErrorString.contains("DRIVER NOT INSTALLED") || gpu.replaceAll("[^0-9]", "").isEmpty()) {
-                                                                String thisGPUdeviceName = getCleanNameForWindowsDeviceID(thisWindowsHardwareInfoProperty);
+                                                            if (gpuArray.isEmpty() || gpuErrorArray.contains("DRIVER NOT INSTALLED") || getFullGPU().replaceAll("[^0-9]", "").isEmpty()) {
+                                                                String thisGPUdeviceName = getCleanNameForWindowsDeviceID(thisWindowsHardwareInfoProperty, pnpDeviceName);
 
-                                                                if (pnpGPU.isEmpty()) {
-                                                                    pnpGPU = thisGPUdeviceName;
-                                                                } else if (!pnpGPU.contains(thisGPUdeviceName)) {
-                                                                    pnpGPU += " + " + thisGPUdeviceName;
+                                                                if (!pnpGPU.contains(thisGPUdeviceName)) {
+                                                                    pnpGPU.add(thisGPUdeviceName);
                                                                 }
                                                             }
                                                         }
@@ -2566,22 +2731,18 @@ public final class GetComputerSpecs {
                                                                     // Do just a few of the most common replacements for codes to brand names.
                                                                     thisAudioID = thisAudioID.replace("8086-", "Intel-").replace("10de-", "NVIDIA-").replace("1002-", "AMD-").replace("1022-", "AMD-");
 
-                                                                    if (audioIDs.isEmpty()) {
-                                                                        audioIDs = thisAudioID;
-                                                                    } else if (!audioIDs.contains(thisAudioID)) {
-                                                                        audioIDs += "+" + thisAudioID;
+                                                                    if (!audioIDsArray.contains(thisAudioID)) {
+                                                                        audioIDsArray.add(thisAudioID);
                                                                     }
                                                                 }
                                                             }
 
                                                             if (!pnpDeviceConfigManagerErrorCode.equals("CM_PROB_PHANTOM")) {
                                                                 // Want some PHANTOM (Error Code 45) devices for audioIDs, but not listed in Audio field.
-                                                                String thisAudioDeviceName = getCleanNameForWindowsDeviceID(thisWindowsHardwareInfoProperty);
+                                                                String thisAudioDeviceName = getCleanNameForWindowsDeviceID(thisWindowsHardwareInfoProperty, pnpDeviceName);
 
-                                                                if (pnpAudio.isEmpty()) {
-                                                                    pnpAudio = thisAudioDeviceName;
-                                                                } else if (!pnpAudio.contains(thisAudioDeviceName)) {
-                                                                    pnpAudio += " + " + thisAudioDeviceName;
+                                                                if (!pnpAudio.contains(thisAudioDeviceName)) {
+                                                                    pnpAudio.add(thisAudioDeviceName);
                                                                 }
                                                             }
                                                         }
@@ -2590,35 +2751,35 @@ public final class GetComputerSpecs {
                                                         break;
                                                     case "02": // Network
                                                     case "0d": // Wireless
-                                                        if (!wireless.contains("Wi-Fi Detected") || !wireless.contains("Bluetooth Detected")) {
-                                                            String thisNetworkDeviceName = getCleanNameForWindowsDeviceID(thisWindowsHardwareInfoProperty);
+                                                        String currentWirlessString = getWireless();
+
+                                                        if (!currentWirlessString.contains("Wi-Fi Detected") || !currentWirlessString.contains("Cellular Detected") || !currentWirlessString.contains("Bluetooth Detected")) {
+                                                            String thisNetworkDeviceName = getCleanNameForWindowsDeviceID(thisWindowsHardwareInfoProperty, pnpDeviceName);
                                                             String lowercaseNetworkDeviceName = thisNetworkDeviceName.toLowerCase();
 
                                                             String thisWirelessDeviceName = "";
 
-                                                            if ((!wireless.contains("Wi-Fi Detected") && (lowercaseNetworkDeviceName.contains("wireless") || lowercaseNetworkDeviceName.contains("wi-fi") || lowercaseNetworkDeviceName.contains("wifi") || lowercaseNetworkDeviceName.contains("802.11"))) || (!wireless.contains("Bluetooth Detected") && lowercaseNetworkDeviceName.contains("bluetooth"))) {
+                                                            if ((!currentWirlessString.contains("Wi-Fi Detected") && !lowercaseNetworkDeviceName.contains("bluetooth") && (lowercaseNetworkDeviceName.contains("wireless") || lowercaseNetworkDeviceName.contains("wi-fi") || lowercaseNetworkDeviceName.contains("wifi") || lowercaseNetworkDeviceName.contains("802.11"))) || (!currentWirlessString.contains("Cellular Detected") && (lowercaseNetworkDeviceName.contains("mobile") || lowercaseNetworkDeviceName.contains("cellular") || lowercaseNetworkDeviceName.contains("wwan") || lowercaseNetworkDeviceName.replace("realtek", "").contains("lte"))) || (!currentWirlessString.contains("Bluetooth Detected") && lowercaseNetworkDeviceName.contains("bluetooth"))) {
                                                                 thisWirelessDeviceName = thisNetworkDeviceName;
                                                             } else if (pnpDeviceClassCode.equals("02")) {
-                                                                if (!wireless.contains("Wi-Fi Detected") && pnpDeviceSubClassCode.equals("80")) {
+                                                                if (!currentWirlessString.contains("Wi-Fi Detected") && pnpDeviceSubClassCode.equals("80")) {
                                                                     // SubClass: Network (SubClass 00 is Ethernet, so is it safe to assume Network not Ethernet is Wi-Fi?)
                                                                     thisWirelessDeviceName = "Possible Unidentified Wi-Fi";
                                                                 }
                                                             } else if (pnpDeviceClassCode.equals("0d")) {
-                                                                if (!wireless.contains("Bluetooth Detected") && pnpDeviceSubClassCode.equals("11")) {
+                                                                // Seems like "40" may be the subclass for cellular cards under Wireless "0d", but don't have enough data to know for sure.
+
+                                                                if (!currentWirlessString.contains("Bluetooth Detected") && pnpDeviceSubClassCode.equals("11")) {
                                                                     // SubClass: Bluetooth
                                                                     thisWirelessDeviceName = "Unidentified Bluetooth";
-                                                                } else if (!wireless.contains("Wi-Fi Detected") && pnpDeviceSubClassCode.equals("80")) {
+                                                                } else if (!currentWirlessString.contains("Wi-Fi Detected") && pnpDeviceSubClassCode.equals("80")) {
                                                                     // SubClass: Wireless
                                                                     thisWirelessDeviceName = "Unidentified Wi-Fi";
                                                                 }
                                                             }
 
-                                                            if (!thisWirelessDeviceName.isEmpty()) {
-                                                                if (pnpWireless.isEmpty()) {
-                                                                    pnpWireless = thisWirelessDeviceName;
-                                                                } else if (!pnpWireless.contains(thisWirelessDeviceName)) {
-                                                                    pnpWireless += " + " + thisWirelessDeviceName;
-                                                                }
+                                                            if (!thisWirelessDeviceName.isEmpty() && !pnpWireless.contains(thisWirelessDeviceName)) {
+                                                                pnpWireless.add(thisWirelessDeviceName);
                                                             }
                                                         }
 
@@ -2635,26 +2796,25 @@ public final class GetComputerSpecs {
                                                         hasScreen = true; // Assume any connected Camera means there's a built-in screen as well (because some All-in-Ones don't use the correct Chassis Type).
 
                                                         break;
+                                                    case "02": // Communications
                                                     case "e0": // Wireless
-                                                        if (!wireless.contains("Wi-Fi Detected") || !wireless.contains("Bluetooth Detected")) {
-                                                            String thisPossibleWirelessDeviceName = getCleanNameForWindowsDeviceID(thisWindowsHardwareInfoProperty);
+                                                        String currentWirlessString = getWireless();
+
+                                                        if (!currentWirlessString.contains("Wi-Fi Detected") || !currentWirlessString.contains("Cellular Detected") || !currentWirlessString.contains("Bluetooth Detected")) {
+                                                            String thisPossibleWirelessDeviceName = getCleanNameForWindowsDeviceID(thisWindowsHardwareInfoProperty, pnpDeviceName);
                                                             String lowercasePossibleWirelessDeviceName = thisPossibleWirelessDeviceName.toLowerCase();
 
                                                             String thisWirelessDeviceName = "";
 
-                                                            if ((!wireless.contains("Wi-Fi Detected") && (lowercasePossibleWirelessDeviceName.contains("wireless") || lowercasePossibleWirelessDeviceName.contains("wi-fi") || lowercasePossibleWirelessDeviceName.contains("wifi") || lowercasePossibleWirelessDeviceName.contains("802.11"))) || (!wireless.contains("Bluetooth Detected") && lowercasePossibleWirelessDeviceName.contains("bluetooth"))) {
+                                                            if ((!currentWirlessString.contains("Wi-Fi Detected") && !lowercasePossibleWirelessDeviceName.contains("bluetooth") && (lowercasePossibleWirelessDeviceName.contains("wireless") || lowercasePossibleWirelessDeviceName.contains("wi-fi") || lowercasePossibleWirelessDeviceName.contains("wifi") || lowercasePossibleWirelessDeviceName.contains("802.11"))) || (!currentWirlessString.contains("Cellular Detected") && (lowercasePossibleWirelessDeviceName.contains("mobile") || lowercasePossibleWirelessDeviceName.contains("cellular") || lowercasePossibleWirelessDeviceName.contains("wwan") || lowercasePossibleWirelessDeviceName.replace("realtek", "").contains("lte"))) || (!currentWirlessString.contains("Bluetooth Detected") && lowercasePossibleWirelessDeviceName.contains("bluetooth"))) {
                                                                 thisWirelessDeviceName = thisPossibleWirelessDeviceName;
-                                                            } else if (!wireless.contains("Bluetooth Detected") && pnpDeviceSubClassCode.equals("01") && pnpDeviceProgProtCode.equals("01")) {
+                                                            } else if (!currentWirlessString.contains("Bluetooth Detected") && pnpDeviceSubClassCode.equals("01") && pnpDeviceProgProtCode.equals("01")) {
                                                                 // SubClass: RF - Programming Interface: Bluetooth
                                                                 thisWirelessDeviceName = "Unidentified Bluetooth";
                                                             }
 
-                                                            if (!thisWirelessDeviceName.isEmpty()) {
-                                                                if (pnpWireless.isEmpty()) {
-                                                                    pnpWireless = thisWirelessDeviceName;
-                                                                } else if (!pnpWireless.contains(thisWirelessDeviceName)) {
-                                                                    pnpWireless += " + " + thisWirelessDeviceName;
-                                                                }
+                                                            if (!thisWirelessDeviceName.isEmpty() && !pnpWireless.contains(thisWirelessDeviceName)) {
+                                                                pnpWireless.add(thisWirelessDeviceName);
                                                             }
                                                         }
 
@@ -2673,11 +2833,21 @@ public final class GetComputerSpecs {
                                 case "Win32_Battery":
                                     if (thisWindowsHardwareInfoLine.startsWith("DesignVoltage")) {
                                         windowsBatteryDesignVoltages.add(thisWindowsHardwareInfoProperty);
+                                    } else if (thisWindowsHardwareInfoLine.startsWith("EstimatedChargeRemaining")) {
+                                        windowsBatteryChargePercentages.add(thisWindowsHardwareInfoProperty);
                                     }
 
                                     break;
                                 case "BatteryStatus":
-                                    if (thisWindowsHardwareInfoLine.startsWith("Voltage")) {
+                                    if (thisWindowsHardwareInfoLine.startsWith("ChargeRate")) {
+                                        windowsBatteryChargeRates.add(thisWindowsHardwareInfoProperty);
+                                    } else if (thisWindowsHardwareInfoLine.startsWith("Charging")) {
+                                        windowsBatteryChargingStatuses.add(thisWindowsHardwareInfoProperty);
+                                    } else if (thisWindowsHardwareInfoLine.startsWith("DischargeRate")) {
+                                        windowsBatteryDischargeRates.add(thisWindowsHardwareInfoProperty);
+                                    } else if (thisWindowsHardwareInfoLine.startsWith("RemainingCapacity")) {
+                                        windowsBatteryRemainingCapacities.add(thisWindowsHardwareInfoProperty);
+                                    } else if (thisWindowsHardwareInfoLine.startsWith("Voltage")) {
                                         windowsBatteryCurrentVoltages.add(thisWindowsHardwareInfoProperty);
                                     }
 
@@ -2742,11 +2912,7 @@ public final class GetComputerSpecs {
                                         String thisDiscDriveMediaLoaded = thisWindowsHardwareInfoProperty;
 
                                         if (!thisDiscDriveName.endsWith("USB Device")) {
-                                            if (discDrive.equals("N/A")) {
-                                                discDrive = thisDiscDriveName;
-                                            } else {
-                                                discDrive += " + " + thisDiscDriveName;
-                                            }
+                                            discDriveArray.add(thisDiscDriveName);
 
                                             discDriveLogicalNames.add(thisDiscDriveLetter);
 
@@ -2809,96 +2975,91 @@ public final class GetComputerSpecs {
                     }
                 }
 
-                // Make sure gpuIDs and audioIDs are always in the same order for Drivers Cache Model Name
-                if (gpuIDs.contains("+")) {
-                    String[] gpuIDsArray = gpuIDs.split("\\+");
-                    Arrays.sort(gpuIDsArray);
-                    gpuIDs = String.join("+", gpuIDsArray);
-                }
+                Collections.sort(gpuIDsArray); // Make sure gpuIDs and audioIDs are always in the same order for Drivers Cache Model Name
+                Collections.sort(audioIDsArray);
 
-                if (audioIDs.contains("+")) {
-                    String[] audioIDsArray = audioIDs.split("\\+");
-                    Arrays.sort(audioIDsArray);
-                    audioIDs = String.join("+", audioIDsArray);
-                }
-
-                if (!isWindowsPE && audio.equals("Microsoft HD Audio")) { // WinPE would never hit this, but *WinRE* does.
+                if (!isWindowsPE && getFullAudio().equals("Microsoft HD Audio")) { // WinPE would never hit this, but *WinRE* does.
                     // Consider this an audio driver WARNING if "Microsoft HD Audio" is the ONLY device listed.
                     String thisAudioErrorString = "DRIVER MAY NOT BE INSTALLED";
 
-                    if (audioErrorString.isEmpty()) {
-                        audioErrorString = thisAudioErrorString;
-                    } else if (!audioErrorString.contains(thisAudioErrorString)) {
-                        audioErrorString = audioErrorString + " + " + thisAudioErrorString;
+                    if (!audioErrorArray.contains(thisAudioErrorString)) {
+                        audioErrorArray.add(thisAudioErrorString);
                     }
                 }
 
                 if (!pnpGPU.isEmpty()) {
                     // pnpGPU will only get filled if GPU is N/A or DRIVER NOT INSTALLED or if GPU model doesn't contain any numbers.
-                    if (gpu.equals("N/A") || gpuErrorString.contains("DRIVER NOT INSTALLED")) {
-                        gpu = pnpGPU;
+                    if (gpuArray.isEmpty() || gpuErrorArray.contains("DRIVER NOT INSTALLED")) {
+                        gpuArray.addAll(pnpGPU);
 
                         if (!isWindowsPE) {
                             String thisGPUerrorString = "DRIVER NOT INSTALLED";
 
-                            if (gpuErrorString.isEmpty()) {
-                                gpuErrorString = thisGPUerrorString;
-                            } else if (!gpuErrorString.contains(thisGPUerrorString)) {
-                                gpuErrorString = gpuErrorString + " + " + thisGPUerrorString;
+                            if (!gpuErrorArray.contains(thisGPUerrorString)) {
+                                gpuErrorArray.add(thisGPUerrorString);
                             }
                         }
-                    } else if (!pnpGPU.contains("Device ") && !pnpGPU.replaceAll("[^0-9]", "").isEmpty()) {
-                        // If GPU doesn't contain any numbers and pnpGPU does (but not just Device ####), add on the pnpGPU.
-                        gpu += " (" + pnpGPU + ")";
+                    } else {
+                        String pnpGPUString = String.join(" + ", pnpGPU);
+                        if (!pnpGPUString.contains("Device ") && !pnpGPUString.replaceAll("[^0-9]", "").isEmpty() && !getFullGPU().contains(pnpGPUString)) {
+                            // If GPU doesn't contain any numbers and pnpGPU does (but not just Device ####), add on the pnpGPU.
+
+                            int lastGPUIndex = (gpuArray.size() - 1);
+                            String lastGPU = gpuArray.get(lastGPUIndex);
+                            lastGPU += " (" + pnpGPUString + ")";
+                            gpuArray.set(lastGPUIndex, lastGPU);
+                        }
                     }
                 }
 
                 if (!pnpAudio.isEmpty()) {
-                    if (audio.equals("N/A")) {
-                        audio = pnpAudio;
+                    if (audioArray.isEmpty()) {
+                        audioArray.addAll(pnpAudio);
 
                         if (!isWindowsPE) {
                             String thisAudioErrorString = "DRIVER NOT INSTALLED";
 
-                            if (audioErrorString.isEmpty()) {
-                                audioErrorString = thisAudioErrorString;
-                            } else if (!audioErrorString.contains(thisAudioErrorString)) {
-                                audioErrorString = audioErrorString + " + " + thisAudioErrorString;
+                            if (!audioErrorArray.contains(thisAudioErrorString)) {
+                                audioErrorArray.add(thisAudioErrorString);
                             }
                         }
-                    } else if (!audio.contains(pnpAudio)) {
-                        audio += " (" + pnpAudio + ")";
+                    } else {
+                        String pnpAudioString = String.join(" + ", pnpAudio);
+
+                        if (!getFullAudio().contains(pnpAudioString)) {
+                            int lastAudioIndex = (audioArray.size() - 1);
+                            String lastAudio = audioArray.get(lastAudioIndex);
+                            lastAudio += " (" + pnpAudioString + ")";
+                            audioArray.set(lastAudioIndex, lastAudio);
+                        }
                     }
                 }
 
                 if (!pnpWireless.isEmpty()) {
-                    // pnpWireless will get filled when Wi-Fi or Bluetooth was not detected probably because in WinPE or no drivers were installed in OS.
-                    String lowercasePnpWireless = pnpWireless.toLowerCase();
-                    if (!wireless.contains("Wi-Fi Detected") && (lowercasePnpWireless.contains("wireless") || lowercasePnpWireless.contains("wi-fi") || lowercasePnpWireless.contains("wifi") || lowercasePnpWireless.contains("802.11"))) {
-                        if (wireless.equals("N/A")) {
-                            wireless = "Wi-Fi Detected";
-                        } else {
-                            wireless += " + Wi-Fi Detected";
+                    for (String thisPnpWireless : pnpWireless) {
+                        String thisLowercasePnpWireless = thisPnpWireless.toLowerCase();
+                        // pnpWireless will get filled when Wi-Fi or Bluetooth was not detected probably because in WinPE or no drivers were installed in OS.
+
+                        String currentWirlessString = getWireless();
+
+                        if (!currentWirlessString.contains("Wi-Fi Detected") && !thisLowercasePnpWireless.contains("bluetooth") && (thisLowercasePnpWireless.contains("wireless") || thisLowercasePnpWireless.contains("wi-fi") || thisLowercasePnpWireless.contains("wifi") || thisLowercasePnpWireless.contains("802.11"))) {
+                            wirelessArray.add(0, "Wi-Fi Detected" + (thisLowercasePnpWireless.contains("unidentified") ? "" : " (" + thisPnpWireless + ")"));
+                        }
+
+                        if (!currentWirlessString.contains("Cellular Detected") && (thisLowercasePnpWireless.contains("mobile") || thisLowercasePnpWireless.contains("cellular") || thisLowercasePnpWireless.contains("wwan") || thisLowercasePnpWireless.replace("realtek", "").contains("lte"))) {
+                            wirelessArray.add("Cellular Detected" + (thisLowercasePnpWireless.contains("generic mobile broadband") ? "" : " (" + thisPnpWireless + ")"));
+                        }
+
+                        if (!currentWirlessString.contains("Bluetooth Detected") && thisLowercasePnpWireless.contains("bluetooth")) {
+                            wirelessArray.add("Bluetooth Detected" + (thisLowercasePnpWireless.contains("unidentified") ? "" : " (" + thisPnpWireless + ")"));
                         }
                     }
-
-                    if (!wireless.contains("Bluetooth Detected") && lowercasePnpWireless.contains("bluetooth")) {
-                        if (wireless.equals("N/A")) {
-                            wireless = "Bluetooth Detected";
-                        } else {
-                            wireless += " + Bluetooth Detected";
-                        }
-                    }
-
-                    wireless += " (" + pnpWireless + ")";
 
                     if (!isWindowsPE) {
                         String thisWirelessErrorString = "DRIVER NOT INSTALLED";
 
-                        if (wirelessErrorString.isEmpty()) {
-                            wirelessErrorString = thisWirelessErrorString;
-                        } else if (!wirelessErrorString.contains(thisWirelessErrorString)) {
-                            wirelessErrorString = wirelessErrorString + " + " + thisWirelessErrorString;
+                        if (!wirelessErrorArray.contains(thisWirelessErrorString)) {
+                            wirelessErrorArray.add(thisWirelessErrorString);
                         }
                     }
                 }
@@ -2913,12 +3074,11 @@ public final class GetComputerSpecs {
                     if (bluetoothVersion.matches("^[0-9][.0-9]*$")) {
                         String bluetoothVersionDetectedString = "Bluetooth " + bluetoothVersion + " Detected";
 
-                        if (wireless.equals("N/A")) {
-                            wireless = bluetoothVersionDetectedString;
-                        } else if (wireless.contains("Bluetooth Detected")) {
-                            wireless = wireless.replace("Bluetooth Detected", bluetoothVersionDetectedString);
+                        int existingBluetoothDetectedIndex = wirelessArray.indexOf("Bluetooth Detected");
+                        if (existingBluetoothDetectedIndex >= 0) {
+                            wirelessArray.set(existingBluetoothDetectedIndex, bluetoothVersionDetectedString);
                         } else {
-                            wireless += " + " + bluetoothVersionDetectedString;
+                            wirelessArray.add(bluetoothVersionDetectedString);
                         }
                     }
                 }
@@ -2927,24 +3087,27 @@ public final class GetComputerSpecs {
                     if (windowsBatteryDesignCapacities.size() == windowsBatteryFullChargeCapacities.size()) {
                         for (int i = 0; i < windowsBatteryDesignCapacities.size(); i++) {
                             String thisBatteryCapacity = "";
+                            double batteryCapacityDouble = 0;
 
                             try {
                                 double thisBatteryDesignCapacity = Double.parseDouble(windowsBatteryDesignCapacities.get(i));
                                 double thisBatteryFullChargeCapacity = Double.parseDouble(windowsBatteryFullChargeCapacities.get(i));
-                                double batteryCapacityDouble = 0;
 
                                 if (thisBatteryDesignCapacity > 0 && thisBatteryFullChargeCapacity > 0) {
                                     batteryCapacityDouble = ((thisBatteryFullChargeCapacity / thisBatteryDesignCapacity) * 100);
                                 } else {
-                                    batteryHealthError.add("Capacity 0%");
+                                    batteryHealthErrorArray.add("Capacity 0%");
                                 }
 
                                 thisBatteryCapacity = new DecimalFormat("#.#").format(batteryCapacityDouble) + "%";
 
                                 if (batteryCapacityDouble < 51) {
-                                    batteryHealthError.add("Capacity <= 50%");
+                                    batteryHealthErrorArray.add("Capacity <= 50%");
                                 } else if (batteryCapacityDouble < 71) {
-                                    batteryHealthWarning.add("Capacity <= 70%");
+                                    batteryHealthWarningArray.add("Capacity <= 70%");
+                                } else if ((batteryCapacityDouble == 100) && brand.equals("HP")) {
+                                    thisBatteryCapacity = "UNKNOWN CAPACITY (Update HP Firmware)";
+                                    batteryHealthWarningArray.add("HP Firmware Update Required for Accurate Battery Percentage");
                                 }
                             } catch (NumberFormatException batteryCapacityException) {
                                 if (isTestMode) {
@@ -2960,7 +3123,7 @@ public final class GetComputerSpecs {
 
                                     double batteryDesignVoltageDouble = (Double.parseDouble(windowsBatteryDesignVoltages.get(i)) / 1000);
                                     if (batteryVoltageDouble < (batteryDesignVoltageDouble - 0.1)) {
-                                        batteryHealthWarning.add("Low Voltage");
+                                        batteryHealthWarningArray.add("Low Voltage");
                                         thisBatteryVoltage += " of " + new DecimalFormat("#.#").format(batteryDesignVoltageDouble) + " V";
                                     }
                                 } catch (NumberFormatException batteryVoltageException) {
@@ -2978,9 +3141,9 @@ public final class GetComputerSpecs {
                                         thisBatteryCycleCount = batteryCycleCount + " Cycle" + ((batteryCycleCount == 1) ? "" : "s");
 
                                         if (batteryCycleCount >= 1000) {
-                                            batteryHealthError.add("Cycles >= 1000");
+                                            batteryHealthErrorArray.add("Cycles >= 1000");
                                         } else if (batteryCycleCount >= 800) {
-                                            batteryHealthWarning.add("Cycles >= 800");
+                                            batteryHealthWarningArray.add("Cycles >= 800");
                                         }
                                     }
                                 } catch (NumberFormatException batteryCycleCountException) {
@@ -2990,14 +3153,25 @@ public final class GetComputerSpecs {
                                 }
                             }
 
-                            if (!thisBatteryCapacity.isEmpty()) {
-                                String thisBatterySummary = thisBatteryCapacity + (thisBatteryVoltage.isEmpty() ? (thisBatteryCycleCount.isEmpty() ? "" : " (" + thisBatteryCycleCount + ")") : " (" + (thisBatteryCycleCount.isEmpty() ? "" : thisBatteryCycleCount + ", ") + thisBatteryVoltage + ")");
+                            if ((batteryCapacityDouble == 100) && thisBatteryVoltage.equals("0 V")
+                                    && (windowsBatteryChargeRates.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryDischargeRates.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryRemainingCapacities.size() == windowsBatteryDesignCapacities.size())
+                                    && windowsBatteryChargeRates.get(i).equals("0") && windowsBatteryDischargeRates.get(i).equals("0") && windowsBatteryRemainingCapacities.get(i).equals("0")) {
+                                // Some systems (specifically HPs) show valid "DesignedCapacity" and "BatteryFullChargedCapacity" values which result in a capacity of "100%" even if there is NO BATTERY,
+                                // so ignore any battery values that have a voltage of "0 V" with a capacity of "100%" but a "ChargeRate" of "0", "DischargeRate" of "0", and a "RemainingCapacity" of "0".
 
-                                if (batteryCapacity.equals("N/A")) {
-                                    batteryCapacity = thisBatterySummary;
-                                } else {
-                                    batteryCapacity += " + " + thisBatterySummary;
+                                if (!brand.equals("HP")) { // Already set note to update firmware for HPs with 100% capacity.
+                                    thisBatteryCapacity = "";
                                 }
+                            }
+
+                            if (!thisBatteryCapacity.isEmpty()) {
+                                if ((windowsBatteryChargingStatuses.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryDischargeRates.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryChargePercentages.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryChargeRates.size() == windowsBatteryDesignCapacities.size())
+                                        && (windowsBatteryChargingStatuses.get(i).equals("True") || windowsBatteryDischargeRates.get(i).startsWith("0")) && windowsBatteryChargePercentages.get(i).startsWith("0") && windowsBatteryChargeRates.get(i).startsWith("0")) {
+
+                                    batteryHealthWarningArray.add("Not Charging");
+                                }
+
+                                batteryHealthArray.add(thisBatteryCapacity + (thisBatteryVoltage.isEmpty() ? (thisBatteryCycleCount.isEmpty() ? "" : " (" + thisBatteryCycleCount + ")") : " (" + (thisBatteryCycleCount.isEmpty() ? "" : thisBatteryCycleCount + ", ") + thisBatteryVoltage + ")"));
                             }
                         }
 
@@ -3048,6 +3222,7 @@ public final class GetComputerSpecs {
                 String thisBatteryCycleCount = "N/A";
                 String thisBatteryHealth = "N/A";
 
+                String thisWifiInfo = "";
                 boolean bluetoothDetected = false;
                 String bluetoothHCIversion = "";
                 String bluetoothLMPversion = "";
@@ -3060,7 +3235,7 @@ public final class GetComputerSpecs {
                 String thisPowerSection = "Unknown";
 
                 for (String thisMacHardwareInfoLine : macHardwareInfo) {
-                    if (!thisMacHardwareInfoLine.startsWith(" ") && !thisMacHardwareInfoLine.isEmpty()) {
+                    if (!thisMacHardwareInfoLine.startsWith(" ") && thisMacHardwareInfoLine.endsWith(":")) {
                         thisMacHardwareInfoCategory = thisMacHardwareInfoLine;
                         continue;
                     }
@@ -3108,10 +3283,12 @@ public final class GetComputerSpecs {
                             case "Audio:":
                                 if (thisMacHardwareInfoLine.startsWith("    ") && !thisMacHardwareInfoLine.startsWith("     ")) {
                                     if (thisMacHardwareInfoLine.indexOf(":") > 0) {
-                                        audio = thisMacHardwareInfoLine.substring(0, thisMacHardwareInfoLine.indexOf(":")).trim(); // This can get something different than Devices on a Mac Pro at least
-                                        if (audio.equals("Devices")) {
-                                            audio = "Built-In";
+                                        String thisAudio = thisMacHardwareInfoLine.substring(0, thisMacHardwareInfoLine.indexOf(":")).trim(); // This can get something different than Devices on a Mac Pro at least
+                                        if (thisAudio.equals("Devices")) {
+                                            thisAudio = "Built-In";
                                         }
+
+                                        audioArray.add(thisAudio);
                                     }
                                 }
 
@@ -3152,13 +3329,15 @@ public final class GetComputerSpecs {
                                         }
                                     }
                                     Collections.sort(wifiVersionsAndProtocols);
-                                    wireless = "Wi-Fi Detected (Supports " + String.join(", ", wifiVersionsAndProtocols) + ")";
+                                    thisWifiInfo = "Wi-Fi Detected (Supports " + String.join(", ", wifiVersionsAndProtocols) + ")";
                                 } else if (thisMacHardwareInfoLine.startsWith("          Supported Channels:")) {
                                     if (thisMacHardwareInfoLine.contains("(6GHz)")) {
-                                        wireless = wireless.replace("6/ax", "6E/ax");
+                                        thisWifiInfo = thisWifiInfo.replace("6/ax", "6E/ax");
                                     }
                                 } else if (thisMacHardwareInfoLine.equals("          Status: Off")) {
-                                    wireless = "Wi-Fi Detected (UNKNOWN Protocols - Wi-Fi DISABLED)";
+                                    if (thisWifiInfo.isEmpty()) {
+                                        thisWifiInfo = "Wi-Fi Detected (UNKNOWN Protocols - Wi-Fi DISABLED)";
+                                    }
                                 }
 
                                 break;
@@ -3194,13 +3373,7 @@ public final class GetComputerSpecs {
                                 break;
                             case "Disc Burning:":
                                 if (thisMacHardwareInfoLine.startsWith("    ") && !thisMacHardwareInfoLine.startsWith("     ")) {
-                                    String thisDiscDrive = thisMacHardwareInfoLine.substring(0, thisMacHardwareInfoLine.length() - 1).trim().replaceAll("\\s{2,}", " ");
-
-                                    if (discDrive.equals("N/A")) {
-                                        discDrive = thisDiscDrive;
-                                    } else {
-                                        discDrive += " + " + thisDiscDrive;
-                                    }
+                                    discDriveArray.add(thisMacHardwareInfoLine.substring(0, thisMacHardwareInfoLine.length() - 1).trim().replaceAll("\\s{2,}", " "));
                                 }
 
                                 if (thisMacHardwareInfoLine.startsWith("      CD-Write:")) {
@@ -3236,18 +3409,16 @@ public final class GetComputerSpecs {
 
                                     String thisWholeGPU = thisGPUbus + thisGPUmodel + " (" + thisVRAMorCoresAmount + ((thisMacHardwareInfoLine.contains("Total Number of Cores:")) ? " Cores" : (thisMacHardwareInfoLine.contains("Dynamic") ? " - Shared" : "")) + ")";
 
-                                    if (gpu.equals("N/A")) {
-                                        gpu = thisWholeGPU;
-                                    } else {
+                                    if (!gpuArray.contains(thisWholeGPU)) { // TODO: Should this check against getFullGPU() instead of gpuArray?
                                         if (thisGPUbus.equals("Built-In: ")) {
-                                            gpu = thisWholeGPU + " + " + gpu;
+                                            gpuArray.add(0, thisWholeGPU);
                                         } else {
-                                            gpu += " + " + thisWholeGPU;
+                                            gpuArray.add(thisWholeGPU);
                                         }
                                     }
                                 } else if (thisMacHardwareInfoLine.startsWith("          Display Type: Built-In") || thisMacHardwareInfoLine.startsWith("          Display Type: Built-in")) { // Could be "Built-In" (for "Retina LCD") or "Built-in" (for "Liquid Retina XDR Display")
                                     hasScreen = true;
-                                    macScreenType = thisMacHardwareInfoLine.substring(33).replace(" LCD", "").replace(" Display", ""); // This will extract "Retina" or "Liquid Retina XDR" etc and will just be empty if not a Retina screen.
+                                    macScreenFeaturesArray.add(thisMacHardwareInfoLine.substring(33).replace(" LCD", "").replace(" Display", "")); // This will extract "Retina" or "Liquid Retina XDR" etc and will just be empty if not a Retina screen.
                                 } else if (screenResolution.isEmpty() && thisMacHardwareInfoLine.startsWith("          Resolution:") && thisMacHardwareInfoProperty.contains(" x ")) {
                                     // Need to be able to extract the proper screen resolution from all these types of values:
                                     // MacBook Pro 11,5 (15-inch, Mid 2015) resolution line is "2880 x 1800 Retina"
@@ -3265,10 +3436,14 @@ public final class GetComputerSpecs {
                                         } else if (resolutionHeightPart.isEmpty() && lastResolutionPart.equals("x")) {
                                             resolutionHeightPart = thisResolutionPart;
                                         } else if (thisResolutionPart.endsWith("0p") || thisResolutionPart.endsWith("K")) { // Detect "1080p", "5K", etc and include in screen type.
-                                            if (macScreenType.isEmpty()) {
-                                                macScreenType = thisResolutionPart;
+
+                                            if (macScreenFeaturesArray.isEmpty()) {
+                                                macScreenFeaturesArray.add(thisResolutionPart);
                                             } else {
-                                                macScreenType += " " + thisResolutionPart;
+                                                int lastMacScreenFeatureIndex = (macScreenFeaturesArray.size() - 1);
+                                                String lastMacScreenFeature = macScreenFeaturesArray.get(lastMacScreenFeatureIndex);
+                                                lastMacScreenFeature += " " + thisResolutionPart;
+                                                macScreenFeaturesArray.set(lastMacScreenFeatureIndex, lastMacScreenFeature);
                                             }
                                         }
 
@@ -3311,11 +3486,7 @@ public final class GetComputerSpecs {
 
                                 if (thisNetworkController.contains("Ethernet")) {
                                     if (thisMacHardwareInfoLine.startsWith("          MAC Address:")) {
-                                        if (ethernetMAC.equals("N/A")) {
-                                            ethernetMAC = thisMacHardwareInfoProperty.toUpperCase();
-                                        } else {
-                                            ethernetMAC += " + " + thisMacHardwareInfoProperty.toUpperCase();
-                                        }
+                                        ethernetMACarray.add(thisMacHardwareInfoProperty.toUpperCase());
                                     }
                                 }
 
@@ -3350,27 +3521,20 @@ public final class GetComputerSpecs {
                                     break;
                                 }
 
-                                if (!thisStorageController.equals("    Thunderbolt AHCI Controller:")) {
+                                if (!thisStorageController.equals("    Thunderbolt AHCI Controller:") && !thisStorageController.equals("    Generic SSD Controller:")) { // "Generic SSD Controller" shows for external USB4 NVMe drives.
                                     if (thisMacHardwareInfoLine.startsWith("          Capacity:")) {
-                                        String thisDriveCapacity = thisMacHardwareInfoProperty;
+                                        thisStorageDriveInfo = thisMacHardwareInfoProperty;
 
                                         try {
-                                            if (thisDriveCapacity.endsWith(" bytes)")) {
-                                                double thisDriveBytes = Double.parseDouble(thisDriveCapacity.substring(thisDriveCapacity.lastIndexOf("(")).replaceAll("[^0-9]", ""));
-                                                thisDriveCapacity = new DecimalFormat("#").format((thisDriveBytes / 1000 / 1000 / 1000)) + " GB";
-                                            } else {
-                                                String[] driveCapacityParts = thisDriveCapacity.split(" ");
-                                                if (driveCapacityParts.length >= 2 && driveCapacityParts[1].length() == 2) {
-                                                    thisDriveCapacity = new DecimalFormat("#").format(Double.parseDouble(driveCapacityParts[0])) + " " + driveCapacityParts[1];
-                                                }
+                                            String[] thisStorageDriveInfoParts = thisStorageDriveInfo.split(" ");
+                                            if ((thisStorageDriveInfoParts.length >= 2) && (thisStorageDriveInfoParts[1].length() == 2)) {
+                                                thisStorageDriveInfo = new DecimalFormat("#").format(Double.parseDouble(thisStorageDriveInfoParts[0])) + " " + thisStorageDriveInfoParts[1]; // Use the existing GB or TB value, but round it to the nearest whole number.
                                             }
-                                        } catch (NumberFormatException hardDriveSizeException) {
+                                        } catch (NumberFormatException thisStorageDriveInfoException) {
                                             if (isTestMode) {
-                                                System.out.println("hardDriveSizeException: " + hardDriveSizeException);
+                                                System.out.println("thisStorageDriveInfoException: " + thisStorageDriveInfoException);
                                             }
                                         }
-
-                                        thisStorageDriveInfo = thisDriveCapacity;
 
                                         if (thisStorageController.equals("    Apple SSD Controller:")) { // This is for NVMe SSDs (which don't have a Medium Type field).
                                             thisStorageDriveInfo += (thisMacHardwareInfoCategory.equals("NVMExpress:") ? " NVMe" : " SSD");
@@ -3384,21 +3548,32 @@ public final class GetComputerSpecs {
                                                 thisDriveModel = "";
                                             }
                                         }
+                                    } else if (thisMacHardwareInfoLine.startsWith("          Serial Number:")) {
+                                        String thisDriveSerial = thisMacHardwareInfoProperty.replaceAll("^[. /]+", "").replaceAll("[. /]+$", ""); // Trim all leading and trailing spaces, periods, and slashes.
+                                        if (!thisDriveSerial.isEmpty()) {
+                                            storageSerialsArray.add(thisDriveSerial);
+                                        }
                                     } else if (!thisStorageDriveInfo.isEmpty() && thisMacHardwareInfoLine.startsWith("          Removable Media:")) {
                                         if (thisMacHardwareInfoProperty.equals("Yes")) { // To ignore DVD drives.
                                             thisStorageDriveInfo = "";
-                                        } else if (storage.equals("N/A")) {
-                                            storage = thisStorageDriveInfo;
                                         } else {
-                                            storage += " + " + thisStorageDriveInfo;
+                                            storageArray.add(thisStorageDriveInfo);
                                         }
                                     } else if (!thisStorageDriveInfo.isEmpty() && !thisStorageController.equals("    Apple SSD Controller:") && thisMacHardwareInfoLine.startsWith("          Medium Type:")) {
                                         String ssdOrHdd = (thisMacHardwareInfoProperty.equals("Solid State") ? "SSD" : "HDD");
+
+                                        int thisStorageDriveInfoIndex = storageArray.lastIndexOf(thisStorageDriveInfo);
+
                                         thisStorageDriveInfo += " " + ssdOrHdd;
-                                        storage += " " + ssdOrHdd;
 
                                         if (!thisDriveModel.isEmpty()) { // Already added model to "thisStorageDriveInfo" above if is in "Apple SSD Controller" section where "NVMe" or "SSD" would have already been added to "thisStorageDriveInfo".
-                                            storage += " (" + thisDriveModel + ")";
+                                            thisStorageDriveInfo += " (" + thisDriveModel + ")";
+                                        }
+
+                                        if (thisStorageDriveInfoIndex >= 0) {
+                                            storageArray.set(thisStorageDriveInfoIndex, thisStorageDriveInfo);
+                                        } else {
+                                            storageArray.add(thisStorageDriveInfo);
                                         }
                                     } else if (!thisStorageDriveInfo.isEmpty() && thisMacHardwareInfoLine.startsWith("          TRIM Support:") && (thisStorageDriveInfo.endsWith(" SSD") || thisStorageDriveInfo.contains(" SSD (") || thisStorageDriveInfo.endsWith(" NVMe") || thisStorageDriveInfo.contains(" NVMe ("))) {
                                         if (!thisMacHardwareInfoProperty.equals("Yes")) {
@@ -3432,64 +3607,68 @@ public final class GetComputerSpecs {
                     chassisType = "Desktop";
                 }
 
+                if (!thisWifiInfo.isEmpty()) {
+                    wirelessArray.add(thisWifiInfo);
+                }
+
                 if (bluetoothDetected) {
-                    if (!wireless.equals("N/A")) {
-                        wireless += " + ";
-                    } else {
-                        wireless = "";
-                    }
+                    String thisBluetoothInfo = "Bluetooth";
 
                     if (!bluetoothHCIversion.isEmpty() || !bluetoothLMPversion.isEmpty()) {
-                        wireless += "Bluetooth " + (bluetoothHCIversion.contains(".") ? bluetoothHCIversion : bluetoothLMPversion) + " Detected";
+                        thisBluetoothInfo += " " + (bluetoothHCIversion.contains(".") ? bluetoothHCIversion : bluetoothLMPversion);
                     } else {
                         // For some strange reason, detailed Bluetooth information no longer exists in Monterey, can only detect if it is present.
                         // BUT, I wrote a script (https://github.com/freegeek-pdx/macOS-Testing-and-Deployment-Scripts/blob/main/Other%20Scripts/get_bluetooth_from_all_mac_specs_pages.sh) to extract every Bluetooth version from every specs URL to be able to know what version this model has if Bluetooth is detected.
 
-                        // Bluetooth Model IDs Last Updated: 11/8/23
-                        if (Arrays.asList("Mac14,2", "Mac14,3", "Mac14,5", "Mac14,6", "Mac14,8", "Mac14,9", "Mac14,10", "Mac14,12", "Mac14,13", "Mac14,14", "Mac14,15", "Mac15,3", "Mac15,4", "Mac15,5", "Mac15,6", "Mac15,7", "Mac15,8", "Mac15,9", "Mac15,10", "Mac15,11").contains(macModelIdentifier)) {
-                            wireless += "Bluetooth 5.3 Detected";
+                        // Bluetooth Model IDs Last Updated: 5/15/25
+                        if (Arrays.asList("Mac14,2", "Mac14,3", "Mac14,5", "Mac14,6", "Mac14,8", "Mac14,9", "Mac14,10", "Mac14,12", "Mac14,13", "Mac14,14", "Mac14,15", "Mac15,3", "Mac15,4", "Mac15,5", "Mac15,6", "Mac15,7", "Mac15,8", "Mac15,9", "Mac15,10", "Mac15,11", "Mac15,12", "Mac15,13", "Mac15,14", "Mac16,1", "Mac16,2", "Mac16,3", "Mac16,5", "Mac16,6", "Mac16,7", "Mac16,8", "Mac16,9", "Mac16,10", "Mac16,11", "Mac16,12", "Mac16,13").contains(macModelIdentifier)) {
+                            thisBluetoothInfo += " 5.3";
                             bluetoothLE = true;
                             bluetoothHandoff = true;
                         } else if (Arrays.asList("Mac13,1", "Mac13,2", "Mac14,7", "MacBookAir9,1", "MacBookAir10,1", "MacBookPro15,1", "MacBookPro15,2", "MacBookPro15,3", "MacBookPro15,4", "MacBookPro16,1", "MacBookPro16,2", "MacBookPro16,3", "MacBookPro16,4", "MacBookPro17,1", "MacBookPro18,1", "MacBookPro18,2", "MacBookPro18,3", "MacBookPro18,4", "MacPro7,1", "Macmini8,1", "Macmini9,1", "iMac20,1", "iMac20,2", "iMac21,1", "iMac21,2", "iMacPro1,1").contains(macModelIdentifier)) {
-                            wireless += "Bluetooth 5.0 Detected";
+                            thisBluetoothInfo += " 5.0";
                             bluetoothLE = true;
                             bluetoothHandoff = true;
                         } else if (Arrays.asList("MacBook10,1", "MacBookAir8,1", "MacBookAir8,2", "MacBookPro11,4", "MacBookPro11,5", "MacBookPro13,1", "MacBookPro13,2", "MacBookPro13,3", "MacBookPro14,1", "MacBookPro14,2", "MacBookPro14,3", "iMac18,1", "iMac18,2", "iMac18,3", "iMac19,1", "iMac19,2").contains(macModelIdentifier)) {
-                            wireless += "Bluetooth 4.2 Detected";
+                            thisBluetoothInfo += " 4.2";
                             bluetoothLE = true;
                             bluetoothHandoff = true; // All Bluetooth 4.2 and newer models support Handoff
                         } else if (Arrays.asList("MacBook8,1", "MacBook9,1", "MacBookAir4,1", "MacBookAir4,2", "MacBookAir5,1", "MacBookAir5,2", "MacBookAir6,1", "MacBookAir6,2", "MacBookAir7,1", "MacBookAir7,2", "MacBookPro9,1", "MacBookPro9,2", "MacBookPro10,1", "MacBookPro10,2", "MacBookPro11,1", "MacBookPro11,2", "MacBookPro11,3", "MacBookPro12,1", "MacPro6,1", "Macmini5,1", "Macmini5,2", "Macmini5,3", "Macmini6,1", "Macmini6,2", "Macmini7,1", "iMac13,1", "iMac13,2", "iMac14,1", "iMac14,2", "iMac14,4", "iMac15,1", "iMac16,1", "iMac16,2", "iMac17,1").contains(macModelIdentifier)) {
                             // SOME of these models with Bluetooth 4.0 DON'T support Monterey, but it would be more effor to not include them.
-                            wireless += "Bluetooth 4.0 Detected";
+                            thisBluetoothInfo += " 4.0";
                             bluetoothLE = true; // All Bluetooth 4.0 and above is BLE
                             if (!Arrays.asList("MacBookAir4,1", "MacBookAir4,2", "Macmini5,1", "Macmini5,2", "Macmini5,3").contains(macModelIdentifier)) {
                                 bluetoothHandoff = true; // Most Bluetooth 4.0 models support Handoff, but some early models don't, so show support for all EXCEPT those models: https://support.apple.com/en-us/HT204689
                             }
                         } else if (Arrays.asList("MacBook5,2", "MacBook6,1", "MacBook7,1", "MacBookAir2,1", "MacBookAir3,1", "MacBookAir3,2", "MacBookPro4,1", "MacBookPro5,1", "MacBookPro5,2", "MacBookPro5,3", "MacBookPro5,5", "MacBookPro6,1", "MacBookPro6,2", "MacBookPro7,1", "MacBookPro8,1", "MacBookPro8,2", "MacBookPro8,3", "MacPro4,1", "MacPro5,1", "Macmini3,1", "Macmini4,1", "iMac9,1", "iMac10,1", "iMac11,2", "iMac11,3", "iMac12,1", "iMac12,2").contains(macModelIdentifier)) {
                             // NONE of these models with Bluetooth 2.1 (plus EDR) support Monterey, but it's no extra effort to include them anyways.
-                            wireless += "Bluetooth 2.1 Detected";
-                        } else {
-                            wireless += "Bluetooth Detected";
+                            thisBluetoothInfo += " 2.1";
                         }
                     }
 
+                    thisBluetoothInfo += " Detected";
+
                     if (bluetoothLE || bluetoothHandoff) {
-                        wireless += " (Supports ";
+                        thisBluetoothInfo += " (Supports ";
 
                         if (bluetoothLE) {
-                            wireless += "BLE";
+                            thisBluetoothInfo += "BLE";
                         }
 
                         if (bluetoothHandoff) {
-                            wireless += (bluetoothLE ? ", " : "") + "Handoff";
+                            thisBluetoothInfo += (bluetoothLE ? ", " : "") + "Handoff";
                         }
 
-                        wireless += ")";
+                        thisBluetoothInfo += ")";
                     }
+
+                    wirelessArray.add(thisBluetoothInfo);
                 }
 
                 // Battery & Power Adapter for Mac
                 if (isLaptop) {
+                    String thisBatterySummary;
+
                     try {
                         String[] batteryCapacityLines = new CommandReader(new String[]{"/usr/sbin/ioreg", "-rc", "AppleSmartBattery"}).getOutputLines();
                         double maxCapacity = 0;
@@ -3507,35 +3686,35 @@ public final class GetComputerSpecs {
 
                         if (maxCapacity > 0 && designCapacity > 0) {
                             double batteryCapacityDouble = ((maxCapacity / designCapacity) * 100);
-                            batteryCapacity = new DecimalFormat("#.#").format(batteryCapacityDouble) + "%";
+                            thisBatterySummary = new DecimalFormat("#.#").format(batteryCapacityDouble) + "%";
 
                             if (batteryCapacityDouble < 51) {
-                                batteryHealthError.add("Capacity <= 50%");
+                                batteryHealthErrorArray.add("Capacity <= 50%");
                             } else if (batteryCapacityDouble < 71) {
-                                batteryHealthWarning.add("Capacity <= 70%");
+                                batteryHealthWarningArray.add("Capacity <= 70%");
                             }
                         } else {
-                            batteryCapacity = "0%";
-                            batteryHealthError.add("Capacity 0%");
+                            thisBatterySummary = "0%";
+                            batteryHealthErrorArray.add("Capacity 0%");
                         }
                     } catch (NumberFormatException batteryCapacityException) {
                         if (isTestMode) {
                             System.out.println("batteryCapacityException: " + batteryCapacityException);
                         }
 
-                        batteryCapacity = "N/A";
+                        thisBatterySummary = "UNKNOWN CAPACITY";
                     }
 
                     if (!thisBatteryCycleCount.equals("N/A")) {
-                        batteryCapacity += " (" + thisBatteryCycleCount + " Cycle" + (thisBatteryCycleCount.equals("1") ? "" : "s") + ")";
+                        thisBatterySummary += " (" + thisBatteryCycleCount + " Cycle" + (thisBatteryCycleCount.equals("1") ? "" : "s") + ")";
 
                         try {
                             int batteryCycleCountInteger = Integer.parseInt(thisBatteryCycleCount);
 
                             if (batteryCycleCountInteger >= 1000) {
-                                batteryHealthError.add("Cycles >= 1000");
+                                batteryHealthErrorArray.add("Cycles >= 1000");
                             } else if (batteryCycleCountInteger >= 800) {
-                                batteryHealthWarning.add("Cycles >= 800");
+                                batteryHealthWarningArray.add("Cycles >= 800");
                             }
                         } catch (NumberFormatException batteryCycleCountException) {
                             if (isTestMode) {
@@ -3544,130 +3723,13 @@ public final class GetComputerSpecs {
                         }
                     }
 
-                    // Laptop Power Adapter Info for Mac - https://support.apple.com/HT201700
-                    // BUT, I wrote a script (https://github.com/freegeek-pdx/macOS-Testing-and-Deployment-Scripts/blob/main/Other%20Scripts/get_power_adapters_from_all_mac_specs_pages.sh) to extract every Power Adapter for each Model ID from every specs URL from the Model pages linked here: https://support.apple.com/HT213325
-                    String powerAdapterType = "";
-
-                    // Power Adapter Model IDs Last Updated: 11/8/23
-                    if (Arrays.asList("MacBookPro1,1", "MacBookPro1,2", "MacBookPro2,1", "MacBookPro2,2", "MacBookPro3,1", "MacBookPro4,1", "MacBookPro5,1", "MacBookPro5,2", "MacBookPro5,3", "MacBookPro6,1", "MacBookPro6,2", "MacBookPro8,2", "MacBookPro8,3", "MacBookPro9,1").contains(macModelIdentifier)) {
-                        powerAdapterType = "85W MagSafe 1";
-                    } else if (Arrays.asList("MacBook1,1", "MacBook2,1", "MacBook3,1", "MacBook4,1", "MacBook5,1", "MacBook5,2", "MacBook6,1", "MacBook7,1", "MacBookPro5,4", "MacBookPro5,5", "MacBookPro7,1", "MacBookPro8,1", "MacBookPro9,2").contains(macModelIdentifier)) {
-                        powerAdapterType = "60W MagSafe 1";
-                    } else if (Arrays.asList("MacBookAir1,1", "MacBookAir2,1", "MacBookAir3,1", "MacBookAir3,2", "MacBookAir4,1", "MacBookAir4,2").contains(macModelIdentifier)) {
-                        powerAdapterType = "45W MagSafe 1";
-                    } else if (Arrays.asList("MacBookPro10,1", "MacBookPro11,2", "MacBookPro11,3", "MacBookPro11,4", "MacBookPro11,5").contains(macModelIdentifier)) {
-                        powerAdapterType = "85W MagSafe 2";
-                    } else if (Arrays.asList("MacBookPro10,2", "MacBookPro11,1", "MacBookPro12,1").contains(macModelIdentifier)) {
-                        powerAdapterType = "60W MagSafe 2";
-                    } else if (Arrays.asList("MacBookAir5,1", "MacBookAir5,2", "MacBookAir6,1", "MacBookAir6,2", "MacBookAir7,1", "MacBookAir7,2").contains(macModelIdentifier)) {
-                        powerAdapterType = "45W MagSafe 2";
-                    } else if (Arrays.asList("MacBookPro16,1", "MacBookPro16,4").contains(macModelIdentifier)) {
-                        powerAdapterType = "96W USB-C";
-                    } else if (Arrays.asList("MacBookPro13,3", "MacBookPro14,3", "MacBookPro15,1", "MacBookPro15,3").contains(macModelIdentifier)) {
-                        powerAdapterType = "87W USB-C";
-                    } else if (Arrays.asList("Mac14,7").contains(macModelIdentifier)) {
-                        powerAdapterType = "67W USB-C";
-                    } else if (Arrays.asList("MacBookPro13,1", "MacBookPro13,2", "MacBookPro14,1", "MacBookPro14,2", "MacBookPro15,2", "MacBookPro15,4", "MacBookPro16,2", "MacBookPro16,3", "MacBookPro17,1").contains(macModelIdentifier)) {
-                        powerAdapterType = "61W USB-C";
-                    } else if (Arrays.asList("MacBook10,1", "MacBookAir8,1", "MacBookAir8,2", "MacBookAir9,1", "MacBookAir10,1").contains(macModelIdentifier)) {
-                        powerAdapterType = "30W USB-C";
-                    } else if (Arrays.asList("MacBook8,1", "MacBook9,1").contains(macModelIdentifier)) {
-                        powerAdapterType = "29W USB-C";
-                    } else if (Arrays.asList("Mac14,6", "Mac14,10", "Mac15,7", "Mac15,9", "Mac15,11", "MacBookPro18,1", "MacBookPro18,2").contains(macModelIdentifier)) {
-                        powerAdapterType = "140W USB-C/MagSafe 3";
-                    } else if (Arrays.asList("Mac14,5", "Mac14,9", "MacBookPro18,3", "MacBookPro18,4").contains(macModelIdentifier)) {
-                        powerAdapterType = "67W or 96W USB-C/MagSafe 3";
-                    } else if (Arrays.asList("Mac14,2").contains(macModelIdentifier)) {
-                        powerAdapterType = "30W or 35W Dual Port or 67W USB-C/MagSafe 3";
-                    } else if (Arrays.asList("Mac14,15").contains(macModelIdentifier)) {
-                        powerAdapterType = "35W Dual Port or 70W USB-C/MagSafe 3";
-                    } else if (Arrays.asList("Mac15,3", "Mac15,6", "Mac15,8", "Mac15,10").contains(macModelIdentifier)) {
-                        powerAdapterType = "70W or 96W USB-C/MagSafe 3";
-                    }
-
-                    // OLD CODE (last updated 8/10/22):
-                    //String macModelIdNamePart = macModelIdentifier.replaceAll("[0-9,]", ""); // Need use this to check if is newer "MacXX,Y" style Model ID in which case the numbers need to be handled differently.
-                    //switch (macShortModelName) {
-                    //    case "MacBook":
-                    //        if (modelIdentifierMajorNumber == 10) {
-                    //            powerAdapterType = "30W USB-C";
-                    //        } else if (modelIdentifierMajorNumber >= 8) {
-                    //            powerAdapterType = "29W USB-C";
-                    //        } else {
-                    //            powerAdapterType = "60W MagSafe 1";
-                    //        }
-                    //
-                    //        break;
-                    //    case "MacBook Pro":
-                    //        if (macModelIdNamePart.equals("Mac")) {
-                    //            // Starting with the Mac Studio, all Model IDs are now just "MacXX,Y" so if this is a MacBook Pro, the Model IDs start back at "Mac14,7" for the "MacBook Pro (13-inch, M2, 2022)"
-                    //            // which would get detected wrong in the conditions after this point which are all for the older style "MacBookProXX,Y" Model IDs.
-                    //            if (macModelIdentifierNumber.equals("14,7")) { // This is the only one that's out yet, and it appers the numbers are shared across all models (not just MacBook Pros) of that Apple Silicon generation, so there will likely be less of a pattern to the numbers ending of the numbers.
-                    //                powerAdapterType = "67W USB-C";
-                    //            }
-                    //        } else if (macModelIdentifierNumber.equals("5,4") || macModelIdentifierNumber.equals("5,5") || macModelIdentifierNumber.equals("7,1") || macModelIdentifierNumber.equals("8,1") || macModelIdentifierNumber.equals("9,2")) {
-                    //            // 5,4 is "MacBook Pro (15-inch, 2.53 GHz, Mid 2009)" which uses 60W for some reason, the rest are all 13 inch Pro's
-                    //            powerAdapterType = "60W MagSafe 1";
-                    //        } else if (macModelIdentifierNumber.equals("10,2") || macModelIdentifierNumber.equals("11,1") || macModelIdentifierNumber.equals("12,1")) {
-                    //            powerAdapterType = "60W MagSafe 2";
-                    //        } else if (modelIdentifierMajorNumber == 18) {
-                    //            if (modelIdentifierMinorNumber <= 2) {
-                    //                powerAdapterType = "140W USB-C/MagSafe 3";
-                    //            } else {
-                    //                powerAdapterType = "67W or 96W USB-C/MagSafe 3";
-                    //            }
-                    //        } else if (modelIdentifierMajorNumber == 17) { // There was only a 17,1 model 13" MacBook Pro (the first Apple Silicon MBP)
-                    //            powerAdapterType = "61W USB-C";
-                    //        } else if (modelIdentifierMajorNumber == 16) {
-                    //            if ((modelIdentifierMinorNumber == 2) || (modelIdentifierMinorNumber == 3)) {
-                    //                powerAdapterType = "61W USB-C";
-                    //            } else {
-                    //                powerAdapterType = "96W USB-C";
-                    //            }
-                    //        } else if (modelIdentifierMajorNumber == 15) {
-                    //            if ((modelIdentifierMinorNumber == 2) || (modelIdentifierMinorNumber == 4)) {
-                    //                powerAdapterType = "61W USB-C";
-                    //            } else {
-                    //                powerAdapterType = "87W USB-C";
-                    //            }
-                    //        } else if (modelIdentifierMajorNumber >= 13) {
-                    //            if (modelIdentifierMinorNumber >= 3) {
-                    //                powerAdapterType = "87W USB-C";
-                    //            } else {
-                    //                powerAdapterType = "61W USB-C";
-                    //            }
-                    //        } else if (modelIdentifierMajorNumber >= 10) {
-                    //            powerAdapterType = "85W MagSafe 2";
-                    //        } else {
-                    //            powerAdapterType = "85W MagSafe 1";
-                    //        }
-                    //
-                    //        break;
-                    //    case "MacBook Air":
-                    //        if (macModelIdNamePart.equals("Mac")) { // See comments above in the MacBook Pro section about the new Model ID naming style
-                    //            if (macModelIdentifierNumber.equals("14,2")) {
-                    //                powerAdapterType = "30W or 35W Dual Port or 67W USB-C/MagSafe 3";
-                    //            }
-                    //        } else if (modelIdentifierMajorNumber >= 8) {
-                    //            powerAdapterType = "30W USB-C";
-                    //        } else if (modelIdentifierMajorNumber >= 5) {
-                    //            powerAdapterType = "45W MagSafe 2";
-                    //        } else {
-                    //            powerAdapterType = "45W MagSafe 1";
-                    //        }
-                    //
-                    //        break;
-                    //    default:
-                    //        break;
-                    //}
-                    if (!powerAdapterType.isEmpty()) {
-                        batteryCapacity += " + " + powerAdapterType;
+                    if (!thisBatterySummary.isEmpty()) {
+                        batteryHealthArray.add(thisBatterySummary);
                     }
 
                     // Battery Health Check
                     if (!thisBatteryHealth.equals("Normal")) {
-                        batteryCapacity += " - CONDITION: " + thisBatteryHealth.toUpperCase();
-                        batteryHealthError.add("Condition Not Normal");
+                        batteryHealthErrorArray.add("Condition " + thisBatteryHealth + " (Not Normal)");
                     }
                 }
 
@@ -3675,12 +3737,12 @@ public final class GetComputerSpecs {
                 if (serialLength < 8) { // https://www.macrumors.com/2010/04/16/apple-tweaks-serial-number-format-with-new-macbook-pro/ & https://www.macrumors.com/2021/03/09/apple-randomized-serial-numbers-early-2021/
                     serial = processorTraySerial;
 
-                    if (serial.equals("N/A") && !ethernetMAC.equals("N/A")) {
+                    if (serial.equals("N/A") && !ethernetMACarray.isEmpty()) {
                         serialIsMAC = true;
-                        serial = ethernetMAC;
+                        serial = getEthernetMAC();
                     }
                 } else if (serialLength == 11 || serialLength == 12) {
-                    // The Configuration Code part of the Serial Number which indicates the model is the last 4 characters for 12 character serials and the last 3 characters for 11 character serials (which are very old and shouldn't actually be encounteredL https://www.macrumors.com/2010/04/16/apple-tweaks-serial-number-format-with-new-macbook-pro/).
+                    // The Configuration Code part of the Serial Number which indicates the model is the last 4 characters for 12 character serials and the last 3 characters for 11 character serials (which are very old and shouldn't actually be encountered: https://www.macrumors.com/2010/04/16/apple-tweaks-serial-number-format-with-new-macbook-pro/).
                     macSerialConfigCode = serial.substring(8);
                 }
 
@@ -3694,10 +3756,10 @@ public final class GetComputerSpecs {
                 // https://www.macrumors.com/2016/02/06/late-2013-mac-pro-video-issues-repair-program/
                 boolean macProPossibleBadGraphics = (macModelIdentifier.equals("MacPro6,1")
                         && Arrays.asList("P5", "P6", "P7", "P8", "P9", "PC", "PD", "PF", "PG", "PH").contains(serial.substring(3, 5))
-                        && (gpu.contains("AMD FirePro D500") || gpu.contains("AMD FirePro D700")));
+                        && (getFullGPU().contains("AMD FirePro D500") || getFullGPU().contains("AMD FirePro D700")));
 
                 if (macBookProPossibleBadGraphics || iMacPossibleBadGraphics || macProPossibleBadGraphics) {
-                    gpuErrorString = "POSSIBLY RECALLED";
+                    gpuErrorArray.add("POSSIBLY RECALLED");
                 }
 
                 // https://web.archive.org/web/20220620162055/https://support.apple.com/en-us/HT212163
@@ -3710,12 +3772,11 @@ public final class GetComputerSpecs {
                 boolean macBookPro13inch2016PossibleBatteryRecall = Arrays.asList("MacBookPro13,1", "MacBookPro14,1").contains(macModelIdentifier);
 
                 if (macBookPro15inch2015PossibleBatteryRecall || macBookPro13inch2016PossibleBatteryRecall || macBookPro2016and2017RecalledBatteryRecall) {
-                    batteryCapacity += " - POSSIBLY RECALLED";
-                    batteryHealthWarning.add("Possibly Recalled");
+                    batteryHealthWarningArray.add("Possibly Recalled");
                 }
 
                 // https://web.archive.org/web/20221208144358/https://support.apple.com/13-inch-macbook-pro-solid-state-drive-service
-                boolean macBookPro13inch2017PossibleSSDRecall = (macModelIdentifier.equals("MacBookPro14,1") && (storage.contains("AP0128J") || storage.contains("AP0256J")));
+                boolean macBookPro13inch2017PossibleSSDRecall = (macModelIdentifier.equals("MacBookPro14,1") && (getFullStorage().contains("AP0128J") || getFullStorage().contains("AP0256J")));
 
                 if (macBookPro13inch2017PossibleSSDRecall) {
                     driveRecalled = true;
@@ -3725,28 +3786,28 @@ public final class GetComputerSpecs {
                 boolean macBookPro13inch2016PossibleBacklightRecall = Arrays.asList("MacBookPro13,1", "MacBookPro13,2").contains(macModelIdentifier);
 
                 if (macBookPro13inch2016PossibleBacklightRecall) {
-                    screenErrorString += " - RECALLED IF BACKLIGHT IS BAD";
+                    screenErrorArray.add("RECALLED IF BACKLIGHT IS BAD");
                 }
 
                 // Only the 2016 13-inch is recalled by Apple for the FLEXGATE issue, but the 15-inch and 2017 models may also have the same issue
                 boolean macBookProOtherFlexgate = Arrays.asList("MacBookPro13,3", "MacBookPro14,1", "MacBookPro14,2", "MacBookPro14,3").contains(macModelIdentifier);
 
                 if (macBookProOtherFlexgate) {
-                    screenErrorString += " - POSSIBLE BACKLIGHT ISSUE (BUT NOT RECALLED)";
+                    screenErrorArray.add("POSSIBLE BACKLIGHT ISSUE (BUT NOT RECALLED)");
                 }
 
                 // https://www.macrumors.com/2017/11/17/apple-extends-free-staingate-repairs/
                 boolean macBookProScreenDelaminationRecall = Arrays.asList("MacBook8,1", "MacBook9,1", "MacBook10,1", "MacBookPro11,4", "MacBookPro11,5", "MacBookPro12,1", "MacBookPro13,1", "MacBookPro13,2", "MacBookPro13,3", "MacBookPro14,1", "MacBookPro14,2", "MacBookPro14,3").contains(macModelIdentifier);
 
                 if (macBookProScreenDelaminationRecall) {
-                    screenErrorString += " - RECALLED IF HAS DELAMINATION";
+                    screenErrorArray.add("RECALLED IF HAS DELAMINATION");
                 }
 
                 // https://www.macrumors.com/2016/11/29/imac-broken-hinge-refunds-repair-program/
                 boolean iMacHingeRecall = macModelIdentifier.equals("iMac14,2");
 
                 if (iMacHingeRecall) {
-                    screenErrorString += " - RECALLED IF HINGE IS BAD";
+                    screenErrorArray.add("RECALLED IF HINGE IS BAD");
                 }
 
                 // https://support.apple.com/keyboard-service-program-for-mac-notebooks
@@ -3774,14 +3835,73 @@ public final class GetComputerSpecs {
                     if ((macShortModelName.length() > 3) && macShortModelName.contains("Mac") && (macModelIdentifierNumber.length() > 2) && macModelIdentifierNumber.contains(",")) {
                         // Even though systemProductName seems to always be the correct macModelIdentifier, confirm it anyway and if correct,
                         // clear out systemProductName (macModelIdentifier) so it isn't unecessarily repeated at the end of the model line.
+
+                        macModelIdentifier = systemProductName;
                         systemProductName = "N/A";
                     }
 
                     int serialLength = serial.length();
                     if (serialLength == 11 || serialLength == 12) {
-                        // The Configuration Code part of the Serial Number which indicates the model is the last 4 characters for 12 character serials and the last 3 characters for 11 character serials (which are very old and shouldn't actually be encounteredL https://www.macrumors.com/2010/04/16/apple-tweaks-serial-number-format-with-new-macbook-pro/).
+                        // The Configuration Code part of the Serial Number which indicates the model is the last 4 characters for 12 character serials and the last 3 characters for 11 character serials (which are very old and shouldn't actually be encountered: https://www.macrumors.com/2010/04/16/apple-tweaks-serial-number-format-with-new-macbook-pro/).
                         macSerialConfigCode = serial.substring(8);
                     }
+
+                    // Override chassis for macOS on PC ("Type" in "Chassis Information" from "dmidecode" is known to be wrong on at least some iMac models.)
+                    if (macShortModelName.contains("Book")) {
+                        chassisType = "Laptop";
+                        isLaptop = true;
+                        hasScreen = true;
+                        hasCamera = true;
+                    } else if (macShortModelName.startsWith("iMac")) {
+                        chassisType = "All-in-One";
+                        isLaptop = false;
+                        hasScreen = true;
+                        hasCamera = true;
+                    } else {
+                        chassisType = "Desktop";
+                        isLaptop = false;
+                        hasScreen = false;
+                        hasCamera = false;
+                    }
+                }
+
+                // Laptop Power Adapter Info for Mac - https://support.apple.com/HT201700
+                // BUT, I wrote a script (https://github.com/freegeek-pdx/macOS-Testing-and-Deployment-Scripts/blob/main/Other%20Scripts/get_power_adapters_from_all_mac_specs_pages.sh) to extract every Power Adapter for each Model ID from every specs URL from the Model pages linked here: https://support.apple.com/HT213325
+                // Power Adapter Model IDs Last Updated: 5/15/25
+                if (Arrays.asList("MacBookPro1,1", "MacBookPro1,2", "MacBookPro2,1", "MacBookPro2,2", "MacBookPro3,1", "MacBookPro4,1", "MacBookPro5,1", "MacBookPro5,2", "MacBookPro5,3", "MacBookPro6,1", "MacBookPro6,2", "MacBookPro8,2", "MacBookPro8,3", "MacBookPro9,1").contains(macModelIdentifier)) {
+                    powerAdapter = "85W MagSafe 1";
+                } else if (Arrays.asList("MacBook1,1", "MacBook2,1", "MacBook3,1", "MacBook4,1", "MacBook5,1", "MacBook5,2", "MacBook6,1", "MacBook7,1", "MacBookPro5,4", "MacBookPro5,5", "MacBookPro7,1", "MacBookPro8,1", "MacBookPro9,2").contains(macModelIdentifier)) {
+                    powerAdapter = "60W MagSafe 1";
+                } else if (Arrays.asList("MacBookAir1,1", "MacBookAir2,1", "MacBookAir3,1", "MacBookAir3,2", "MacBookAir4,1", "MacBookAir4,2").contains(macModelIdentifier)) {
+                    powerAdapter = "45W MagSafe 1";
+                } else if (Arrays.asList("MacBookPro10,1", "MacBookPro11,2", "MacBookPro11,3", "MacBookPro11,4", "MacBookPro11,5").contains(macModelIdentifier)) {
+                    powerAdapter = "85W MagSafe 2";
+                } else if (Arrays.asList("MacBookPro10,2", "MacBookPro11,1", "MacBookPro12,1").contains(macModelIdentifier)) {
+                    powerAdapter = "60W MagSafe 2";
+                } else if (Arrays.asList("MacBookAir5,1", "MacBookAir5,2", "MacBookAir6,1", "MacBookAir6,2", "MacBookAir7,1", "MacBookAir7,2").contains(macModelIdentifier)) {
+                    powerAdapter = "45W MagSafe 2";
+                } else if (Arrays.asList("MacBookPro16,1", "MacBookPro16,4").contains(macModelIdentifier)) {
+                    powerAdapter = "96W USB-C";
+                } else if (Arrays.asList("MacBookPro13,3", "MacBookPro14,3", "MacBookPro15,1", "MacBookPro15,3").contains(macModelIdentifier)) {
+                    powerAdapter = "87W USB-C";
+                } else if (Arrays.asList("Mac14,7").contains(macModelIdentifier)) {
+                    powerAdapter = "67W USB-C";
+                } else if (Arrays.asList("MacBookPro13,1", "MacBookPro13,2", "MacBookPro14,1", "MacBookPro14,2", "MacBookPro15,2", "MacBookPro15,4", "MacBookPro16,2", "MacBookPro16,3", "MacBookPro17,1").contains(macModelIdentifier)) {
+                    powerAdapter = "61W USB-C";
+                } else if (Arrays.asList("MacBook10,1", "MacBookAir8,1", "MacBookAir8,2", "MacBookAir9,1", "MacBookAir10,1").contains(macModelIdentifier)) {
+                    powerAdapter = "30W USB-C";
+                } else if (Arrays.asList("MacBook8,1", "MacBook9,1").contains(macModelIdentifier)) {
+                    powerAdapter = "29W USB-C";
+                } else if (Arrays.asList("Mac14,6", "Mac14,10", "Mac15,7", "Mac15,9", "Mac15,11", "Mac16,5", "Mac16,7", "MacBookPro18,1", "MacBookPro18,2").contains(macModelIdentifier)) {
+                    powerAdapter = "140W USB-C/MagSafe 3";
+                } else if (Arrays.asList("Mac14,5", "Mac14,9", "MacBookPro18,3", "MacBookPro18,4").contains(macModelIdentifier)) {
+                    powerAdapter = "67W or 96W USB-C/MagSafe 3";
+                } else if (Arrays.asList("Mac14,2", "Mac15,12", "Mac16,12").contains(macModelIdentifier)) {
+                    powerAdapter = "30W or 35W Dual Port or 70W USB-C/MagSafe 3";
+                } else if (Arrays.asList("Mac14,15", "Mac15,13", "Mac16,13").contains(macModelIdentifier)) {
+                    powerAdapter = "35W Dual Port or 70W USB-C/MagSafe 3";
+                } else if (Arrays.asList("Mac15,3", "Mac15,6", "Mac15,8", "Mac15,10", "Mac16,1", "Mac16,6", "Mac16,8").contains(macModelIdentifier)) {
+                    powerAdapter = "70W or 96W USB-C/MagSafe 3";
                 }
 
                 if (systemProductName.equals("N/A")) {
@@ -3789,8 +3909,12 @@ public final class GetComputerSpecs {
                     // And systemProductName will always be N/A on macOS.
                     model = macShortModelName;
 
-                    if (!macModelIdentifierNumber.isEmpty()) {
-                        model += " " + macModelIdentifierNumber;
+                    if (!macModelIdentifierNumber.isEmpty() && !model.contains(macModelIdentifierNumber)) {
+                        if (macModelIdentifier.equals("Mac" + macModelIdentifierNumber)) {
+                            model += " / " + macModelIdentifier;
+                        } else {
+                            model += " " + macModelIdentifierNumber;
+                        }
                     }
                 }
 
@@ -3993,17 +4117,23 @@ public final class GetComputerSpecs {
                     }
 
                     if (!marketingModelNameWasCachedOnMacOS) {
-                        for (int curlAttempt = 0; curlAttempt < 30; curlAttempt++) {
+                        int maxLoadModelAttempts = 3;
+                        for (int loadModelAttempt = 1; loadModelAttempt <= maxLoadModelAttempts; loadModelAttempt++) {
                             try {
-                                // TODO: Do curl in Java. Eventually.
-
                                 String downloadedMarketingModelName = "";
 
                                 if (!macSerialConfigCode.isEmpty()) {
                                     // The following URL API is what "About This Mac" uses to load the Marketing Model Name.
-                                    downloadedMarketingModelName = (isWindows
-                                            ? new CommandReader(new String[]{"\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12, [Net.SecurityProtocolType]::Ssl3; (Invoke-RestMethod -Uri 'https://support-sp.apple.com/sp/product?cc=" + macSerialConfigCode + "' -UseBasicParsing -TimeoutSec 5).root.configCode"}).getFirstOutputLine()
-                                            : new CommandReader(new String[]{"/usr/bin/curl", "-m", "5", "-sfL", "https://support-sp.apple.com/sp/product?cc=" + macSerialConfigCode}).getFirstOutputLineContaining("<configCode>"));
+
+                                    // NOTE: Loading apple.com with WebReader seems to fail on Linux and Windows (with Java 21) with SSLHandshakeException handshake_failure, but not on macOS.
+                                    // But, loading the URL via "curl" or "Invoke-RestMethod" works, so do that instead on Linux and Windows.
+                                    if (isLinux) {
+                                        downloadedMarketingModelName = new CommandReader(new String[]{"/usr/bin/curl", "-m", "5", "-sfL", "https://support-sp.apple.com/sp/product?cc=" + macSerialConfigCode}).getFirstOutputLineContaining("<configCode>");
+                                    } else if (isWindows) {
+                                        downloadedMarketingModelName = new CommandReader(new String[]{"\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12, [Net.SecurityProtocolType]::Ssl3; (Invoke-RestMethod -Uri 'https://support-sp.apple.com/sp/product?cc=" + macSerialConfigCode + "' -UseBasicParsing -TimeoutSec 5).root.configCode"}).getFirstOutputLine();
+                                    } else {
+                                        downloadedMarketingModelName = new WebReader("https://support-sp.apple.com/sp/product?cc=" + macSerialConfigCode).getFirstOutputLineContaining("<configCode>");
+                                    }
 
                                     if (downloadedMarketingModelName.contains("<configCode>")) {
                                         downloadedMarketingModelName = downloadedMarketingModelName.substring(downloadedMarketingModelName.indexOf("<configCode>") + 12, downloadedMarketingModelName.indexOf("</configCode>"));
@@ -4018,13 +4148,20 @@ public final class GetComputerSpecs {
                                     // If the "About This Mac" URL API (used above) failed or only returned the Short Model Name (such as how "MacBook Air" will only be returned for *SOME* 2013 "MacBookAir6,1" or "MacBookAir6,2" serials),
                                     // fallback on using the "Specs Search" URL API (used below) to retrieve the Marketing Model Name (since it will return "MacBook Air (11-inch, Mid 2013)" for the 2013 "MacBookAir6,1" and "MacBook Air (13-inch, Mid 2013)" for the 2013 "MacBookAir6,2").
                                     // For more information about this "Specs Search" URL API, see: https://github.com/freegeek-pdx/macOS-Testing-and-Deployment-Scripts/blob/main/Other%20Scripts/get_specs_url_from_serial.sh
+                                    // IMPORTANT: On May 15th, 2025, "https://km.support.apple.com/kb/index?page=categorydata" started returning 403 Forbidden! But other active "page" values that are still used on other parts of their site still work, so I think this was intentionally taken down.
 
-                                    downloadedMarketingModelName = (isWindows
-                                            ? new CommandReader(new String[]{"\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12, [Net.SecurityProtocolType]::Ssl3; (Invoke-RestMethod -Uri 'https://km.support.apple.com/kb/index?page=categorydata&serialnumber=" + serial + "' -UseBasicParsing -TimeoutSec 10).name"}).getFirstOutputLine()
-                                            : new CommandReader(new String[]{"/usr/bin/curl", "-m", "10", "-sfL", "https://km.support.apple.com/kb/index?page=categorydata&serialnumber=" + serial}).getFirstOutputLineContaining("\"name\": \"")); // I have seem this URL API timeout after 5 seconds when called multiple times rapidly (likely because of rate limiting), so give it a 10 second timeout which seems to always work.
+                                    // NOTE: Loading apple.com with WebReader seems to fail on Linux and Windows (with Java 21) with SSLHandshakeException handshake_failure, but not on macOS.
+                                    // But, loading the URL via "curl" or "Invoke-RestMethod" works, so do that instead on Linux and Windows.
+                                    if (isLinux) {
+                                        downloadedMarketingModelName = new CommandReader(new String[]{"/usr/bin/curl", "-m", "10", "-sfL", "https://km.support.apple.com/kb/index?page=categorydata&serialnumber=" + serial}).getFirstOutputLineContaining("\"name\": \""); // I have seen this URL API timeout after 5 seconds when called multiple times rapidly (likely because of rate limiting), so give it a 10 second timeout which seems to always work.
+                                    } else if (isWindows) {
+                                        downloadedMarketingModelName = new CommandReader(new String[]{"\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12, [Net.SecurityProtocolType]::Ssl3; (Invoke-RestMethod -Uri 'https://km.support.apple.com/kb/index?page=categorydata&serialnumber=" + serial + "' -UseBasicParsing -TimeoutSec 10).name"}).getFirstOutputLine();
+                                    } else {
+                                        downloadedMarketingModelName = new WebReader("https://km.support.apple.com/kb/index?page=categorydata&serialnumber=" + serial).getOutputLinesAsString();
+                                    }
 
                                     if (downloadedMarketingModelName.contains("\"name\": \"")) {
-                                        downloadedMarketingModelName = downloadedMarketingModelName.substring(downloadedMarketingModelName.indexOf("\"name\": \"") + 9, downloadedMarketingModelName.lastIndexOf("\""));
+                                        downloadedMarketingModelName = new JSONObject(downloadedMarketingModelName).getString("name");
                                     } else if (!isWindows) {
                                         downloadedMarketingModelName = "";
                                     }
@@ -4058,10 +4195,14 @@ public final class GetComputerSpecs {
                                     }
 
                                     break;
-                                } else {
-                                    TimeUnit.MILLISECONDS.sleep(500);
+                                } else if (loadModelAttempt < maxLoadModelAttempts) {
+                                    try {
+                                        TimeUnit.SECONDS.sleep(loadModelAttempt);
+                                    } catch (InterruptedException sleepException) {
+                                        // Ignore sleepException
+                                    }
                                 }
-                            } catch (InterruptedException macModelException) {
+                            } catch (JSONException macModelException) {
                                 if (isTestMode) {
                                     System.out.println("macModelException: " + macModelException);
                                 }
@@ -4091,7 +4232,7 @@ public final class GetComputerSpecs {
                 }
 
                 if (!macModelIdentifierNumber.isEmpty() && !model.contains(macModelIdentifierNumber)) {
-                    if (model.contains(macShortModelName)) {
+                    if (model.contains(macShortModelName) && !macModelIdentifier.equals("Mac" + macModelIdentifierNumber)) {
                         model = model.replace(macShortModelName, macShortModelName + " " + macModelIdentifierNumber);
                     } else {
                         model += " / " + macModelIdentifier;
@@ -4099,25 +4240,27 @@ public final class GetComputerSpecs {
                 }
 
                 if (hasScreen) {
-                    // Get Mac Screen Size (of built-in screen) using native Objective-C methods via JXA (JavaScript for Automation). Based On: https://stackoverflow.com/a/12589799
-                    screenSize = new CommandReader(new String[]{"/usr/bin/osascript", "-l", "JavaScript", "-e", "ObjC.import('AppKit'); $.NSApplication.sharedApplication; for (const thisScreen of $.NSScreen.screens.js) { const thisScreenNumber = thisScreen.deviceDescription.js.NSScreenNumber.js; if ($.CGDisplayIsBuiltin(thisScreenNumber)) { const physicalScreenSize = $.CGDisplayScreenSize(thisScreenNumber); (Math.round((Math.sqrt(Math.pow(physicalScreenSize.width, 2) + Math.pow(physicalScreenSize.height, 2)) / 25.4) * 10) / 10); break } }"}).getFirstOutputLine();
+                    if (isMacOS) {
+                        // Get Mac Screen Size (of built-in screen) using native Objective-C methods via JXA (JavaScript for Automation). Based On: https://stackoverflow.com/a/12589799
+                        screenSize = new CommandReader(new String[]{"/usr/bin/osascript", "-l", "JavaScript", "-e", "ObjC.import('AppKit'); $.NSApplication.sharedApplication; for (const thisScreen of $.NSScreen.screens.js) { const thisScreenNumber = thisScreen.deviceDescription.js.NSScreenNumber.js; if ($.CGDisplayIsBuiltin(thisScreenNumber)) { const physicalScreenSize = $.CGDisplayScreenSize(thisScreenNumber); (Math.round((Math.sqrt(Math.pow(physicalScreenSize.width, 2) + Math.pow(physicalScreenSize.height, 2)) / 25.4) * 10) / 10); break } }"}).getFirstOutputLine();
 
-                    if (screenSize.isEmpty() || screenSize.equals("0")) { // I've never seen this happen, but doesn't hurt to check.
-                        screenSize = "N/A";
-                    } else {
-                        if (screenSize.endsWith(".9")) {
-                            screenSize = new DecimalFormat("#").format(Double.parseDouble(screenSize));
+                        if (screenSize.isEmpty() || screenSize.equals("0")) { // I've never seen this happen, but doesn't hurt to check.
+                            screenSize = "N/A";
+                        } else {
+                            if (screenSize.endsWith(".9")) {
+                                screenSize = new DecimalFormat("#").format(Double.parseDouble(screenSize));
+                            }
+                            screenSize += "-inch";
                         }
-                        screenSize += "-inch";
                     }
 
-                    // If somehow that direct screen size check failed (or macScreenType is empty), see if we can get the screen size (or screen type) from the Marketing Model Name
-                    if (screenSize.equals("N/A") || macScreenType.isEmpty()) {
+                    // If not on macOS or somehow that direct screen size check failed (or macScreenType is empty), see if we can get the screen size (or screen type) from the Marketing Model Name
+                    if (screenSize.equals("N/A") || macScreenFeaturesArray.isEmpty()) {
                         String[] modelWords = model.split("\\W+");
 
                         for (int i = 0; i < modelWords.length; i++) {
-                            if (macScreenType.isEmpty() && modelWords[i].equals("Retina")) {
-                                macScreenType = "Retina";
+                            if (modelWords[i].equals("Retina") && (macScreenFeaturesArray.isEmpty() || !macScreenFeaturesArray.contains("Retina"))) {
+                                macScreenFeaturesArray.add("Retina");
                             } else if (screenSize.equals("N/A") && modelWords[i].equals("inch")) {
                                 try {
                                     String screenInches = modelWords[i - 1];
@@ -4134,29 +4277,23 @@ public final class GetComputerSpecs {
                         }
                     }
 
-                    if (new CommandReader(new String[]{"/usr/bin/osascript", "-l", "JavaScript", "-e", "ObjC.import('AppKit'); $.NSApplication.sharedApplication; for (const thisScreen of $.NSScreen.screens.js) { if ($.CGDisplayIsBuiltin(thisScreen.deviceDescription.js.NSScreenNumber.js)) { thisScreen.canRepresentDisplayGamut($.NSDisplayGamutP3); break } }"}).getFirstOutputLine().equals("true")) {
-                        if (macScreenType.isEmpty()) {
-                            macScreenType = "P3";
-                        } else {
-                            macScreenType += " + P3";
+                    if (isMacOS) {
+                        if (new CommandReader(new String[]{"/usr/bin/osascript", "-l", "JavaScript", "-e", "ObjC.import('AppKit'); $.NSApplication.sharedApplication; for (const thisScreen of $.NSScreen.screens.js) { if ($.CGDisplayIsBuiltin(thisScreen.deviceDescription.js.NSScreenNumber.js)) { thisScreen.canRepresentDisplayGamut($.NSDisplayGamutP3); break } }"}).getFirstOutputLine().equals("true")) {
+                            macScreenFeaturesArray.add("P3");
+                        }
+
+                        if (new CommandReader(new String[]{"/usr/bin/osascript", "-l", "JavaScript", "-e", "ObjC.import('AppKit'); $.NSApplication.sharedApplication; for (const thisScreen of $.NSScreen.screens.js) { if ($.CGDisplayIsBuiltin(thisScreen.deviceDescription.js.NSScreenNumber.js)) { thisScreen.maximumFramesPerSecond; break } }"}).getFirstOutputLine().equals("120")) {
+                            // This method is only available on macOS 12 and newer (which the only Macs that support ProMotion shipped with), but it's fine if it errors and returns nothing on older versions of macOS.
+                            // https://developer.apple.com/documentation/appkit/nsscreen/3824745-maximumframespersecond?language=objc
+                            macScreenFeaturesArray.add("ProMotion");
                         }
                     }
 
-                    if (new CommandReader(new String[]{"/usr/bin/osascript", "-l", "JavaScript", "-e", "ObjC.import('AppKit'); $.NSApplication.sharedApplication; for (const thisScreen of $.NSScreen.screens.js) { if ($.CGDisplayIsBuiltin(thisScreen.deviceDescription.js.NSScreenNumber.js)) { thisScreen.maximumFramesPerSecond; break } }"}).getFirstOutputLine().equals("120")) {
-                        // This method is only available on macOS 12 and newer (which the only Macs that support ProMotion shipped with), but it's fine if it errors and returns nothing on older versions of macOS.
-                        // https://developer.apple.com/documentation/appkit/nsscreen/3824745-maximumframespersecond?language=objc
-                        if (macScreenType.isEmpty()) {
-                            macScreenType = "ProMotion";
-                        } else {
-                            macScreenType += " + ProMotion";
-                        }
-                    }
-
-                    if (!macScreenType.isEmpty()) {
+                    if (!macScreenFeaturesArray.isEmpty()) {
                         if (screenSize.equals("N/A")) {
-                            screenSize = macScreenType;
+                            screenSize = String.join(" + ", macScreenFeaturesArray);
                         } else {
-                            screenSize += " (" + macScreenType + ")";
+                            screenSize += " (" + String.join(" + ", macScreenFeaturesArray) + ")";
                         }
                     }
                 }
@@ -4180,7 +4317,7 @@ public final class GetComputerSpecs {
                 if (brand.equals("HP") && model.equals("N/A")) {
                     // HP stores the Type/System ID in the Motherboard Product value and often (but not always) the System Version is unused leaving the Model variable N/A.
                     // So, in that case, we might as well fill it with relevant info, and the following code will move it to the end and put the proper Model Name first.
-                    model = motherboardProduct;
+                    model = motherboardModel;
                     modelIsActualSKU = true;
                 }
 
@@ -4206,28 +4343,40 @@ public final class GetComputerSpecs {
                     }
                 }
 
-                String motherboardVersionAndProduct = motherboardProduct;
-                if (!motherboardVersion.equals("N/A") && !motherboardProduct.toLowerCase().equals(motherboardVersion.toLowerCase())) {
-                    if (motherboardVersion.startsWith(brand) && !motherboardProduct.startsWith(brand)) {
-                        motherboardVersionAndProduct = motherboardVersion + " / " + motherboardProduct;
+                if (!motherboardVersion.equals("N/A") && !motherboardModel.toLowerCase().equals(motherboardVersion.toLowerCase())) {
+                    if (motherboardVersion.startsWith(brand) && !motherboardModel.startsWith(brand)) {
+                        motherboardModel = motherboardVersion + " / " + motherboardModel;
                     } else {
-                        motherboardVersionAndProduct += " / " + motherboardVersion;
+                        motherboardModel += " / " + motherboardVersion;
                     }
                 }
 
                 // Use Motherboard info if Model is N/A or if Motherboard contains all that Model does and more.
-                if (model.equals("N/A") || motherboardVersionAndProduct.toLowerCase().contains(model.toLowerCase())) {
-                    model = motherboardVersionAndProduct;
+                if (model.equals("N/A") || motherboardModel.toLowerCase().contains(model.toLowerCase())) {
+                    possibleCustomDesktopOrBareMotherboard = (!hasScreen && model.equals("N/A"));
+                    model = motherboardModel;
                 }
 
                 if (serial.equals("N/A")) {
                     serial = motherboardSerial;
 
-                    if (serial.equals("N/A") && !ethernetMAC.equals("N/A")) {
+                    if (serial.equals("N/A") && !ethernetMACarray.isEmpty()) {
                         serialIsMAC = true;
-                        serial = ethernetMAC;
+                        serial = getEthernetMAC();
                     }
                 }
+            }
+
+            if (motherboardBrand.equals("N/A")) {
+                motherboardBrand = brand;
+            }
+
+            if (motherboardModel.equals("N/A")) {
+                motherboardModel = model;
+            }
+
+            if (motherboardSerial.equals("N/A")) {
+                motherboardSerial = serial;
             }
 
             if (model.startsWith(brand + " ")) {
@@ -4241,6 +4390,19 @@ public final class GetComputerSpecs {
                 if (model.startsWith("/")) {
                     // If the Version was just the Brand and systemProductNameAndSKU was added, we may end up with a model that starts with "/ "
                     model = model.substring(1).trim();
+                }
+            }
+
+            if (motherboardModel.startsWith(motherboardBrand + " ")) {
+                if (motherboardModel.startsWith("Dell System ")) {
+                    // Some Dell models start with "Dell System"
+                    motherboardModel = motherboardModel.substring(11).trim();
+                } else {
+                    motherboardModel = motherboardModel.substring(motherboardBrand.length()).trim();
+                }
+
+                if (motherboardModel.startsWith("/")) {
+                    motherboardModel = motherboardModel.substring(1).trim();
                 }
             }
 
@@ -4355,14 +4517,23 @@ public final class GetComputerSpecs {
                 }
             }
 
+            if (!cpuThreads.isEmpty()) {
+                try {
+                    cpuThreadCount = Integer.parseInt(cpuThreads);
+                } catch (NumberFormatException cpuThreadsException) {
+                    if (isTestMode) {
+                        System.out.println("cpuThreadsException: " + cpuThreadsException);
+                    }
+                }
+            }
+
             if (!cpuCores.isEmpty()) {
                 cpu += " (" + cpuCores + " Core" + (cpuCores.equals("1") ? "" : "s");
 
                 if (!cpuPandEcoresString.isEmpty()) {
                     cpu += " - " + cpuPandEcoresString;
-                } else if (!cpuThreads.isEmpty()) {
+                } else if (cpuThreadCount > 0) {
                     try {
-                        cpuThreadCount = Integer.parseInt(cpuThreads);
                         cpu += ((cpuThreadCount > Integer.parseInt(cpuCores)) ? " + HT" : "");
                     } catch (NumberFormatException cpuCoresException) {
                         if (isTestMode) {
@@ -4412,148 +4583,296 @@ public final class GetComputerSpecs {
 
             screenSize = screenSize.replace(") (", " + ");
 
-            fullOS = os;
-            fullModel = model;
-            fullBrand = brand;
-            fullSerial = serial;
-            fullCPU = cpu;
-            fullRAM = detailedRAM;
-            fullStorage = storage;
-            fullGPU = gpu;
-            fullAudio = audio;
-            fullScreenSize = screenSize;
-            fullDiscDrive = discDrive;
+            if (false) { // DEBUG: Set to "true" to test proper display for all array values and errors.
+                storageArray.add("DEBUG STORAGE 1");
+                storageArray.add("DEBUG STORAGE 2");
+                storageSerialsArray.add("DEBUG STORAGE SERIAL 1");
+                storageSerialsArray.add("DEBUG STORAGE SERIAL 2");
+                driveHealth = "DEBUG STORAGE HEALTH";
+                driveHealthWarning = true;
+                driveTrimWarning = true;
+                driveRecalled = true;
 
-            // Trim fields to PCsCRM limits
-            if (os.length() > 100) {
-                os = os.substring(0, 99) + "…";
+                batteryHealthArray.add("DEBUG BATTERY 1");
+                batteryHealthArray.add("DEBUG BATTERY 2");
+                batteryHealthWarningArray.add("DEBUG BATTERY WARNING 1");
+                batteryHealthWarningArray.add("DEBUG BATTERY WARNING 2");
+                batteryHealthWarningArray.add("Possibly Recalled");
+                batteryHealthErrorArray.add("DEBUG BATTERY ERROR 1");
+                batteryHealthErrorArray.add("DEBUG BATTERY ERROR 2");
+                batteryHealthErrorArray.add("Condition Debug");
+
+                gpuArray.add("DEBUG GPU 1");
+                gpuArray.add("DEBUG GPU 2");
+                gpuErrorArray.add("DEBUG GPU ERROR 1");
+                gpuErrorArray.add("DEBUG GPU ERROR 1");
+
+                audioArray.add("DEBUG AUDIO 1");
+                audioArray.add("DEBUG AUDIO 2");
+                audioErrorArray.add("DEBUG AUDIO ERROR 1");
+                audioErrorArray.add("DEBUG AUDIO ERROR 1");
+
+                wirelessArray.add("DEBUG WIRELESS 1");
+                wirelessArray.add("DEBUG WIRELESS 2");
+                wirelessErrorArray.add("DEBUG WIRELESS ERROR 1");
+                wirelessErrorArray.add("DEBUG WIRELESS ERROR 1");
+
+                screenErrorArray.add("DEBUG SCREEN ERROR 1");
+                screenErrorArray.add("DEBUG SCREEN ERROR 1");
+
+                discDriveArray.add("DEBUG DISC DRIVE 1");
+                discDriveArray.add("DEBUG DISC DRIVE 2");
+                discDriveCanBurnCDs = false;
+                discDriveCanBurnDVDs = false;
+                hasDiscInDiscDrive = true;
+
+                keyboardRecalled = true;
+            } else if (false) { // DEBUG: Set to "true" to test all "N/A" values.
+                os = "N/A";
+                fullOS = "N/A";
+
+                model = "N/A";
+                macShortModelName = "N/A";
+                macModelIdentifier = "";
+                fullModel = "N/A";
+                motherboardModel = "N/A";
+                fullMotherboardModel = "N/A";
+                chassisType = "N/A";
+                isLaptop = false;
+                hasScreen = false;
+                macScreenFeaturesArray.clear();
+                hasTouchscreen = false;
+                hasCamera = false;
+                possibleCustomDesktopOrBareMotherboard = false;
+                brand = "N/A";
+                fullBrand = "N/A";
+                motherboardBrand = "N/A";
+                fullMotherboardBrand = "N/A";
+                serial = "N/A";
+                fullSerial = "N/A";
+                motherboardSerial = "N/A";
+                fullMotherboardSerial = "N/A";
+                cpu = "N/A";
+                fullCPU = "N/A";
+                cpuThreadCount = 0;
+                ram = "N/A";
+                detailedRAM = "N/A";
+                fullRAM = "N/A";
+                storage = "N/A";
+                storageArray.clear();
+                storageSerial = "";
+                storageSerialsArray.clear();
+                disksFormattedWithoutPartitionTable.clear();
+                driveHealth = "N/A";
+                driveHealthWarning = false;
+                driveTrimWarning = false;
+                driveRecalled = false;
+                batteryHealthArray.clear();
+                powerAdapter = "";
+                batteryHealthWarningArray.clear();
+                batteryHealthErrorArray.clear();
+                gpu = "N/A";
+                gpuArray.clear();
+                gpuIDsArray.clear();
+                gpuErrorArray.clear();
+                audio = "N/A";
+                audioArray.clear();
+                audioIDsArray.clear();
+                audioErrorArray.clear();
+                wirelessArray.clear();
+                wirelessErrorArray.clear();
+                screenSize = "N/A";
+                fullScreenSize = "N/A";
+                screenResolution = "";
+                screenErrorArray.clear();
+                discDrive = "N/A";
+                discDriveArray.clear();
+                discDriveLogicalNames.clear();
+                discDriveCanBurnCDs = false;
+                discDriveCanBurnDVDs = false;
+                hasDiscInDiscDrive = false;
+                keyboardRecalled = false;
+                serialIsMAC = false;
+
+                ethernetMACarray.clear();
             }
 
-            if (model.length() > 100) {
+            fullOS = os;
+            fullBrand = brand;
+            fullMotherboardBrand = motherboardBrand;
+            fullModel = model;
+            fullMotherboardModel = motherboardModel;
+            fullSerial = serial;
+            fullMotherboardSerial = motherboardSerial;
+            fullCPU = cpu;
+            fullRAM = detailedRAM;
+            storage = getFullStorage();
+            storageSerial = getFullStorageSerial();
+            gpu = getFullGPU();
+            audio = getFullAudio();
+            fullScreenSize = screenSize;
+            discDrive = getFullDiscDrive();
+            Collections.sort(discDriveLogicalNames);
+
+            // Trim fields to PCsCRM limits (which are all 150 characters)
+            // Prior to May 2024, max field lengths varied and some had much shorter limits, which is why some truncations are now needlessly meticulous, but leaving them in place doesn't hurt.
+            int maxFieldLength = 150;
+
+            if (os.length() > maxFieldLength) {
+                os = os.substring(0, (maxFieldLength - 1)) + "…";
+            }
+
+            if (brand.length() > maxFieldLength) {
+                brand = brand.substring(0, (maxFieldLength - 1)) + "…";
+            }
+
+            if (motherboardBrand.length() > maxFieldLength) {
+                motherboardBrand = motherboardBrand.substring(0, (maxFieldLength - 1)) + "…";
+            }
+
+            if (model.length() > maxFieldLength) {
                 if (brand.equals("Apple")) {
                     model = model.replace("Thunderbolt 3", "TB3");
 
-                    if (model.length() > 100) {
+                    if (model.length() > maxFieldLength) {
                         model = model.replace("-inch", "\"");
 
-                        if (model.length() > 100) {
+                        if (model.length() > maxFieldLength) {
                             model = model.replace(" 20", " '");
 
-                            if (model.length() > 100) {
-                                model = model.substring(0, 99) + "…";
+                            if (model.length() > maxFieldLength) {
+                                model = model.substring(0, (maxFieldLength - 1)) + "…";
                             }
                         }
                     }
                 } else {
-                    model = model.substring(0, 99) + "…";
+                    model = model.substring(0, (maxFieldLength - 1)) + "…";
                 }
             }
 
-            if (brand.length() > 75) {
-                brand = brand.substring(0, 74) + "…";
+            if (motherboardModel.length() > maxFieldLength) {
+                motherboardModel = motherboardModel.substring(0, (maxFieldLength - 1)) + "…";
             }
 
-            if (serial.length() > 50) {
+            if (serial.length() > maxFieldLength) {
                 serial = serial.replaceAll("[^A-Za-z0-9]", "");
 
-                if (serial.length() > 50) {
-                    serial = serial.substring(0, 50); // Don't do an ellipsis to get the most serial info
+                if (serial.length() > maxFieldLength) {
+                    serial = serial.substring(0, maxFieldLength); // Don't do an ellipsis to get the most serial info
                 }
             }
 
-            if (cpu.length() > 75) {
+            if (motherboardSerial.length() > maxFieldLength) {
+                motherboardSerial = motherboardSerial.replaceAll("[^A-Za-z0-9]", "");
+
+                if (motherboardSerial.length() > maxFieldLength) {
+                    motherboardSerial = motherboardSerial.substring(0, maxFieldLength); // Don't do an ellipsis to get the most serial info
+                }
+            }
+
+            if (cpu.length() > maxFieldLength) {
                 cpu = cpu.replace("T2 Security Chip", "T2 Chip");
 
-                if (cpu.length() > 75) {
+                if (cpu.length() > maxFieldLength) {
                     cpu = cpu.replace("T2 Chip", "T2");
 
-                    if (cpu.length() > 75) {
-                        cpu = cpu.replace("GHz Max", "GHz");
+                    if (cpu.length() > maxFieldLength) {
+                        cpu = cpu.replace("GHz Max", "Max");
 
-                        if (cpu.length() > 75) {
+                        if (cpu.length() > maxFieldLength) {
                             cpu = cpu.replace(" GHz", "");
 
-                            if (cpu.length() > 75) {
-                                cpu = cpu.substring(0, 74) + "…";
+                            if (cpu.length() > maxFieldLength) {
+                                cpu = cpu.replace(" Max", "");
+
+                                if (cpu.length() > maxFieldLength) {
+                                    cpu = cpu.substring(0, (maxFieldLength - 1)) + "…";
+                                }
                             }
                         }
                     }
                 }
             }
 
-            if (detailedRAM.length() <= 80) {
-                // 80 Char Limit in PCsCRM for MEMORY!
+            if (detailedRAM.length() <= maxFieldLength) {
                 ram = detailedRAM;
             } else {
                 detailedRAM = ram + (ramSlots.isEmpty() ? "" : " (" + ramSlots + ")");
 
-                if (detailedRAM.length() <= 80) {
+                if (detailedRAM.length() <= maxFieldLength) {
                     ram = detailedRAM;
                 } else {
                     detailedRAM = detailedRAM.replace(" GB", "GB");
 
-                    if (detailedRAM.length() <= 80) {
+                    if (detailedRAM.length() <= maxFieldLength) {
                         ram = detailedRAM;
                     } else {
                         detailedRAM = detailedRAM.replace(" + ", "+");
 
-                        if (detailedRAM.length() <= 80) {
+                        if (detailedRAM.length() <= maxFieldLength) {
                             ram = detailedRAM;
                         }
                     }
                 }
             }
 
-            if (storage.length() > 20) {
-                // 20 Char Limit in PCsCRM for HARD DRIVE!
+            if (storage.length() > maxFieldLength) {
                 storage = storage.replaceAll("\\(.*?\\)", "").trim().replaceAll("\\s{2,}", " "); // Remove all model names which will always be in parens and will never contain parens within them since they were manually removed and there are never parens anywhere else in the line.
 
-                if (storage.length() > 20) {
+                if (storage.length() > maxFieldLength) {
                     storage = storage.replace(" GB", "GB").replace(" TB", "TB").replace(" RAID", "").replace(" + ", "+");
 
-                    if (storage.length() > 20) {
+                    if (storage.length() > maxFieldLength) {
                         storage = storage.replace(" HDD", "").replace(" SSD", "").replace(" NVMe", "").replace("GB", " GB").replace("TB", " TB").replace("+", " + ");
 
-                        if (storage.length() > 20) {
+                        if (storage.length() > maxFieldLength) {
                             storage = storage.replace(" GB", "GB").replace(" TB", "TB").replace(" + ", "+");
 
-                            if (storage.length() > 20) {
-                                storage = storage.substring(0, 19) + "…";
+                            if (storage.length() > maxFieldLength) {
+                                storage = storage.substring(0, (maxFieldLength - 1)) + "…";
                             }
                         }
                     }
                 }
             }
 
-            if (gpu.length() > 100) {
-                gpu = gpu.substring(0, 99) + "…";
+            if (storageSerial.length() > 75) { // This field has a 75 character limit, unlike the other fields.
+                storageSerial = storageSerial.replaceAll("[^A-Za-z0-9]", "");
+
+                if (storageSerial.length() > 75) {
+                    storageSerial = storageSerial.substring(0, 75); // Don't do an ellipsis to get the most storage serial info
+                }
             }
 
-            if (audio.length() > 100) {
-                audio = audio.substring(0, 99) + "…";
+            if (gpu.length() > maxFieldLength) {
+                gpu = gpu.substring(0, (maxFieldLength - 1)) + "…";
             }
 
-            if (screenSize.length() > 30) {
+            if (audio.length() > maxFieldLength) {
+                audio = audio.substring(0, (maxFieldLength - 1)) + "…";
+            }
+
+            if (screenSize.length() > maxFieldLength) {
                 screenSize = screenSize.replace("-inch", "\"");
 
-                if (screenSize.length() > 30) {
+                if (screenSize.length() > maxFieldLength) {
                     screenSize = screenSize.replace("Touchscreen", "TS"); // Hopefully it'll be pretty obvious to folks that "(TS)" means "Touchscreen"
 
-                    if (screenSize.length() > 30) {
+                    if (screenSize.length() > maxFieldLength) {
                         screenSize = screenSize.replace("ProMotion", "PM");
 
-                        if (screenSize.length() > 30) {
+                        if (screenSize.length() > maxFieldLength) {
                             screenSize = screenSize.replace("Liquid Retina", "LRD");
 
-                            if (screenSize.length() > 30) {
+                            if (screenSize.length() > maxFieldLength) {
                                 screenSize = screenSize.replace("Retina", "RD"); // Use "RD" as the abbreviation for "Retina Display" since it's less ambiguous that just "R"
 
-                                if (screenSize.length() > 30) {
+                                if (screenSize.length() > maxFieldLength) {
                                     screenSize = screenSize.replace(" XDR", "-XDR"); // Don't want to end up with a combined "LRDXDR" so make it "LRD-XRD" instead when spaces get removed.
                                     screenSize = screenSize.replace(" ", "");
 
-                                    if (screenSize.length() > 30) {
-                                        screenSize = screenSize.substring(0, 29) + "…";
+                                    if (screenSize.length() > maxFieldLength) {
+                                        screenSize = screenSize.substring(0, (maxFieldLength - 1)) + "…";
                                     }
                                 }
                             }
@@ -4562,18 +4881,15 @@ public final class GetComputerSpecs {
                 }
             }
 
-            if (discDrive.length() > 45) {
-                discDrive = discDrive.substring(0, 44) + "…";
+            if (discDrive.length() > maxFieldLength) {
+                discDrive = discDrive.substring(0, (maxFieldLength - 1)) + "…";
             }
 
-        } catch (Exception loadSpecsException) {
-            // We want this to catch any an all kinds of exceptions
-            if (isTestMode) {
-                System.out.println("loadSpecsException: " + loadSpecsException);
-                loadSpecsException.printStackTrace();
-            }
+        } catch (Exception loadSpecsException) { // We want this to catch any an all kinds of exceptions
+            System.out.println("loadSpecsException: " + loadSpecsException);
+            loadSpecsException.printStackTrace();
 
-            didError = true;
+            loadSpecsExceptionString = loadSpecsException.toString();
         }
 
         if (isTestMode) {
@@ -4582,6 +4898,10 @@ public final class GetComputerSpecs {
     }
 
     public String getCleanNameForWindowsDeviceID(String deviceID) {
+        return getCleanNameForWindowsDeviceID(deviceID, "");
+    }
+
+    public String getCleanNameForWindowsDeviceID(String deviceID, String fallbackName) {
         String searchDB = null;
         String vendorCode = null;
         String deviceCode = null;
@@ -4613,9 +4933,7 @@ public final class GetComputerSpecs {
             String subVendorCode = null;
             String subDeviceCode = null;
 
-            try {
-                BufferedReader databaseBufferedReader = new BufferedReader(new InputStreamReader(this.getClass().getResource("/Resources/" + searchDB).openStream()));
-
+            try (BufferedReader databaseBufferedReader = new BufferedReader(new InputStreamReader(this.getClass().getResource("/Resources/" + searchDB).openStream()))) {
                 String thisDatabaseLine;
                 while ((thisDatabaseLine = databaseBufferedReader.readLine()) != null) {
                     if (!thisDatabaseLine.isEmpty() && !thisDatabaseLine.startsWith("#")) {
@@ -4654,7 +4972,7 @@ public final class GetComputerSpecs {
                         }
                     }
                 }
-            } catch (IOException getCleanNameForWindowsDeviceIDException) {
+            } catch (Exception getCleanNameForWindowsDeviceIDException) {
                 System.out.println("getCleanNameForWindowsDeviceIDException: " + getCleanNameForWindowsDeviceIDException);
             }
 
@@ -4677,26 +4995,32 @@ public final class GetComputerSpecs {
                     return cleanVendor + cleanDevice;
                 }
 
-                return cleanVendor + " Device " + deviceCode.toUpperCase();
+                String nameWithDeviceCode = cleanVendor + " Device " + deviceCode.toUpperCase();
+                return (fallbackName.isEmpty() ? nameWithDeviceCode : (fallbackName + " [" + nameWithDeviceCode + "]"));
             }
 
-            return "Vendor " + vendorCode.toUpperCase() + " Device " + deviceCode.toUpperCase();
+            String nameWithVendorAndDeviceCode = "Vendor " + vendorCode.toUpperCase() + " Device " + deviceCode.toUpperCase();
+            return (fallbackName.isEmpty() ? nameWithVendorAndDeviceCode : (fallbackName + " [" + nameWithVendorAndDeviceCode + "]"));
         }
 
-        return "N/A";
+        return (fallbackName.isEmpty() ? "N/A" : fallbackName);
     }
 
     //GETTERS
-    public String getWindowsActivationInfo(boolean isTestMode, boolean isLoggedIn) {
-        return getWindowsActivationInfo(isTestMode, isLoggedIn, true);
+    public String getWindowsLicenseInfo(boolean isTestMode, boolean isLoggedIn) {
+        return getWindowsLicenseInfo(isTestMode, isLoggedIn, true);
     }
 
-    public String getWindowsActivationInfo(boolean isTestMode, boolean isLoggedIn, boolean obscureDPKs) {
-        // This code started out as a simple Activation Info output for display, but then slowly evolved into being part of a much more
-        // complex process to also activate Windows and really should be broken out into it's own class with separate properties so that
+    public String getWindowsLicenseInfo(boolean isTestMode, boolean isLoggedIn, boolean obscureDPKs) {
+        // This code started out as a simple Windows license info output for display, but then slowly evolved into being part of a much more
+        // complex process to also license Windows and really should be broken out into it's own class with separate properties so that
         // this code and the code that calls it (which parses the returned string) could be greatly cleaned up and simplified.
 
-        if (System.getProperty("os.name").startsWith("Windows")) {
+        String osName = System.getProperty("os.name");
+        if (osName.startsWith("Windows")) {
+            boolean isWindows11 = osName.startsWith("Windows 11");
+            boolean isWindowsHomeEdition = (os.contains(" Home"));
+
             String[] slmgrDlvInfo = new CommandReader(new String[]{"\\Windows\\System32\\cscript.exe", "/nologo", "\\Windows\\System32\\slmgr.vbs", "/dlv"}).getOutputLines();
 
             String productKeyChannel = "<i>UNKNOWN</i>";
@@ -4715,9 +5039,18 @@ public final class GetComputerSpecs {
 
             String actualProductKey = (partialProductKey.isEmpty() ? ":</b> <i>UNKNOWN</i>" : (" in Registry (Partial):</b> " + partialProductKey)) + "<br/><i>ERROR RETRIEVING FULL PRODUCT KEY</i>"; // This should never be used.
 
-            boolean isActivated = (licenseStatus.equals("Licensed"));
+            boolean isLicensed = (licenseStatus.equals("Licensed"));
             boolean possibleNonRefurbProductKey = true; // NOTE: NO LONGER CONSIDERING ANY PHYSICAL COAs FROM THE "OEM:NONSLP" CHANNEL TO BE VALID REFURB KEYS SINCE WE ARE NOW USING 100% DPKs. OLD CODE: (!productKeyChannel.equals("OEM:NONSLP")); // If Product Key didn't come from Registry as "OEM:NONSLP", it CAN'T be a Refurb Product Key from a physical COA.
             // Refurb DPKs will have the productKeyChannel of "OEM:DM" which is checked below by confirming the DPK in the Registry is the DPK in the "oa3tool-assemble.xml" file. 
+            boolean isCitizenshipDPK = false;
+
+            if (!isLicensed && productKeyChannel.equals("OEM:DM") && new File("\\Install\\DPK\\Logs\\oa3tool-assemble.xml").exists()) {
+                // NOTE: When applying a Refurb DPK, we only run "slmgr /ipk" to install the DPK and DO NOT run "slmgr /ato" to Activate Windows as doing so would be a CBR compliance violation.
+                // So, if "License Status" is NOT "Licensed" (such as "Notification"), but it is from a Refurb DPK that we have installed and not activated, consider is licensed.
+                // The Refurb DPK will still be verified below and "possibleNonRefurbProductKey" will be set accordingly.
+                licenseStatus = "Licensed <i>(Refurb DPK Applied)</i>";
+                isLicensed = true;
+            }
 
             String[] productKeyInfoFromBIOS = new CommandReader(new String[]{"\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Get-CimInstance SoftwareLicensingService -Property OA3xOriginalProductKeyDescription,OA3xOriginalProductKey | Format-List OA3xOriginalProductKeyDescription,OA3xOriginalProductKey"}).getOutputLines();
 
@@ -4740,9 +5073,9 @@ public final class GetComputerSpecs {
                             originalProductKeyFromBIOS = "XXXXX-XXXXX-XXXXX-XXXXX-" + originalProductKeyFromBIOS.substring(originalProductKeyFromBIOS.length() - 5); // Do not display whole Product Keys so that they are not easy to incorrectly re-use or be unnecessarily seen by volunteers.
                         }
 
-                        if (!isActivated) {
-                            licenseStatus = "<i>Digitally Licensed (Product Key in BIOS)</i>";
-                            isActivated = true;
+                        if (!isLicensed) {
+                            licenseStatus = "Licensed <i>(Digital Product Key in BIOS)</i>";
+                            isLicensed = true;
                         }
                     }
                 }
@@ -4753,7 +5086,7 @@ public final class GetComputerSpecs {
             String coaIDfromProductID = "";
             String productKeyID = ""; // This is for the name and formatting of this ID for Refurb DPKs.
 
-            if (isActivated) {
+            if (isLicensed) {
                 if (productKeyFromRegistryVbsTempPath == null) {
                     try (InputStream productKeyFromRegistryVbsInputStream = this.getClass().getClassLoader().getResourceAsStream("Resources/product-key-from-registry.vbs")) {
                         File productKeyFromRegistryVbsTempFile = File.createTempFile("qa_helper-product_key_from_registry", ".vbs");
@@ -4788,6 +5121,9 @@ public final class GetComputerSpecs {
                     for (String thisProductKeyFromRegistryVbsOutputLine : productKeyFromRegistryVbsOutputLines) {
                         if (thisProductKeyFromRegistryVbsOutputLine.startsWith("Product Name: ")) {
                             currentProductNameFromRegistry = thisProductKeyFromRegistryVbsOutputLine.substring(thisProductKeyFromRegistryVbsOutputLine.indexOf(": ") + 2);
+                            if (isWindows11 && currentProductNameFromRegistry.contains("Windows 10")) {
+                                currentProductNameFromRegistry = currentProductNameFromRegistry.replace("Windows 10", "Windows 11"); // Product Key info from Registry will still say Windows 10 even when using a DPK for Windows 11, so manually change the display so the technicians don't get confused and thing the wrong DPK was used.
+                            }
                         } else if (thisProductKeyFromRegistryVbsOutputLine.startsWith("Product ID: ")) {
                             currentProductIdFromRegistry = thisProductKeyFromRegistryVbsOutputLine.substring(thisProductKeyFromRegistryVbsOutputLine.indexOf(": ") + 2);
                         } else if (thisProductKeyFromRegistryVbsOutputLine.startsWith("Product Key: ")) {
@@ -4796,7 +5132,11 @@ public final class GetComputerSpecs {
                     }
                 }
 
-                List<String> windowsGenericProductKeys = Arrays.asList("VK7JG-NPHTM-C97JM-9MPGT-3V66T", "NF6HC-QH89W-F8WYV-WWXV4-WFG6P", "RHGJR-N7FVY-Q3B8F-KBQ6V-46YP4"); // These are Windows 10 Pro generic Product Keys used with Win 10 upgrades and retail/oem activations (digitally licensed computers): https://www.tenforums.com/tutorials/95922-generic-product-keys-install-windows-10-editions.html
+                List<String> windowsGenericProductKeys = Arrays.asList( // Generic Product Keys used with Win 10 upgrades and retail/oem activations (digitally licensed computers): https://www.tenforums.com/tutorials/95922-generic-product-keys-install-windows-10-editions.html
+                        "YTMG3-N6DKC-DKB77-7M9GH-8HVX7", "37GNV-YCQVD-38XP9-T848R-FC2HD", "46J3N-RY6B3-BJFDY-VBFT9-V22HG", // Windows 10 Home
+                        "VK7JG-NPHTM-C97JM-9MPGT-3V66T", "NF6HC-QH89W-F8WYV-WWXV4-WFG6P", "RHGJR-N7FVY-Q3B8F-KBQ6V-46YP4" // Windows 10 Pro
+                );
+
                 ArrayList<String> windowsGenericPartialProductKeys = new ArrayList<>();
                 windowsGenericProductKeys.forEach(thisGenericProductKey -> {
                     windowsGenericPartialProductKeys.add(thisGenericProductKey.substring(thisGenericProductKey.lastIndexOf("-") + 1));
@@ -4841,7 +5181,7 @@ public final class GetComputerSpecs {
                         actualProductKey = (partialProductKey.isEmpty() ? ":</b> <i>UNKNOWN - </i>" : (" in Registry (Partial):</b> " + partialProductKey + "<br/>")) + "<i>" + noRegistryProductKeyNote + "</i>";
                     }
                 } else {
-                    // Obscure all Product Keys when not logged in and only display whole Product Keys for physical COAs when logged in since they would be visible anyways (which could have been entered to activate manually from an OEM COA sticker before being able to use a DPK).
+                    // Obscure all Product Keys when not logged in and only display whole Product Keys for physical COAs when logged in since they would be visible anyways (which could have been entered to license manually from an OEM COA sticker before being able to use a DPK).
                     // This way DPKs are never easy to incorrectly re-use or are unnecessarily seen by volunteers.
                     actualProductKey = " in Registry:</b> " + ((!isLoggedIn || (!productKeyChannel.equals("OEM:NONSLP") && obscureDPKs)) ? "XXXXX-XXXXX-XXXXX-XXXXX-" + currentProductKeyFromRegistry.substring(currentProductKeyFromRegistry.length() - 5) : currentProductKeyFromRegistry);
                 }
@@ -4873,12 +5213,37 @@ public final class GetComputerSpecs {
 
                 if (productKeyChannel.equals("OEM:DM") && new File("\\Install\\DPK\\Logs\\oa3tool-assemble.xml").exists()) {
                     // "OEM:DM" could mean that the computer has an Embedded Digital Product Key OR that we have issued it Refurbished Digital Product Key using oa3tool.
-                    // Therefore, only allow "OEM:DM" Product Keys if the "oa3tool-assemble.xml" file exists (which contains the Refurb DPK applied by us) AND the currentProductKeyFromRegistry and productKeyID matches the info in there.
+                    // Therefore, only allow "OEM:DM" Product Keys if the "oa3tool-assemble.xml" file exists (which contains the Refurb DPK applied by us) AND the currentProductKeyFromRegistry and productKeyID matches the info in there AND it contains a valid Licensable Part Number for the correct version and edition.
 
                     try {
-                        String oa3toolAssembleContents = String.join("", Files.readAllLines(Paths.get("\\Install\\DPK\\Logs\\oa3tool-assemble.xml"), StandardCharsets.UTF_8)).replace(" ", ""); // Remove all spaces because "ProductKeyID" value could have trailing spaces.
+                        String oa3toolAssembleContents = String.join("", Files.readAllLines(Paths.get("\\Install\\DPK\\Logs\\oa3tool-assemble.xml"))).replace(" ", ""); // Remove all spaces because "ProductKeyID" value could have trailing spaces.
 
-                        if (oa3toolAssembleContents.contains("<ProductKey>" + currentProductKeyFromRegistry + "</ProductKey>") && oa3toolAssembleContents.contains("<ProductKeyID>" + productKeyID + "</ProductKeyID>")) {
+                        ArrayList<String> validRefurbDPKLPNs = new ArrayList<>();
+                        if (isWindows11) {
+                            if (isWindowsHomeEdition) {
+                                validRefurbDPKLPNs.add("WV2-00048");
+                            } else {
+                                validRefurbDPKLPNs.add("QLF-00626"); // Citizenship
+                                validRefurbDPKLPNs.add("QLF-00624"); // Commercial
+                            }
+                        } else {
+                            if (isWindowsHomeEdition) {
+                                validRefurbDPKLPNs.add("WV2-00047");
+                            } else {
+                                validRefurbDPKLPNs.add("QLF-00623"); // Citizenship
+                                validRefurbDPKLPNs.add("QLF-00621"); // Commercial
+                            }
+                        }
+
+                        String licensablePartNumber = "";
+                        int productKeyPartNumberOpenTagIndex = oa3toolAssembleContents.indexOf("<ProductKeyPartNumber>");
+                        int productKeyPartNumberCloseTagIndex = oa3toolAssembleContents.indexOf("</ProductKeyPartNumber>");
+                        if ((productKeyPartNumberOpenTagIndex > 0) && (productKeyPartNumberCloseTagIndex > 0) && ((productKeyPartNumberCloseTagIndex - productKeyPartNumberOpenTagIndex) == 31)) {
+                            licensablePartNumber = oa3toolAssembleContents.substring(productKeyPartNumberOpenTagIndex + 22, productKeyPartNumberCloseTagIndex);
+                        }
+
+                        if (oa3toolAssembleContents.contains("<ProductKey>" + currentProductKeyFromRegistry + "</ProductKey>") && oa3toolAssembleContents.contains("<ProductKeyID>" + productKeyID + "</ProductKeyID>") && validRefurbDPKLPNs.contains(licensablePartNumber)) {
+                            isCitizenshipDPK = (!isWindowsHomeEdition && licensablePartNumber.equals(validRefurbDPKLPNs.get(0)));
                             possibleNonRefurbProductKey = false;
                         }
                     } catch (IOException readOa3toolAssembleexception) {
@@ -4889,10 +5254,10 @@ public final class GetComputerSpecs {
                 }
             }
 
-            return ((isActivated && possibleNonRefurbProductKey)
-                    ? "<b style='color: REPLACE_FOR_ERROR_TITLE'>WINDOWS APPEARS TO BE ACTIVATED WITH A NON-REFURBISHED PC PRODUCT KEY</b>"
-                    : "<b style='color: " + (isActivated ? "REPLACE_FOR_SUCESS_TITLE" : "REPLACE_FOR_WARNING_TITLE") + "'>Windows " + (isActivated ? "Is Properly Activated With a Refurbished PC Product Key" : "IS NOT Currently Activated") + "</b>")
-                    + (isActivated
+            return ((isLicensed && possibleNonRefurbProductKey)
+                    ? "<b style='color: REPLACE_FOR_ERROR_TITLE'>WINDOWS APPEARS TO BE LICENSED WITH A NON-REFURBISHED PC PRODUCT KEY</b>"
+                    : "<b style='color: " + (isLicensed ? "REPLACE_FOR_SUCESS_TITLE" : "REPLACE_FOR_WARNING_TITLE") + "'>" + (isLicensed ? "Properly Licensed With a Windows " + (isWindows11 ? "11" : "10") + " " + (isWindowsHomeEdition ? "Home" : "Pro") + " " + (isCitizenshipDPK ? "<i>Citizenship</i>" : "<u>Commercial</u>") + " Digital Product Key for Refurbished PC" : "Windows IS NOT Currently Licensed") + "</b>")
+                    + (isLicensed
                             ? "<br/><br/><br/>"
                             + "<b>License Status:</b> " + licenseStatus
                             + "<br/><br/>"
@@ -4921,8 +5286,8 @@ public final class GetComputerSpecs {
         return "";
     }
 
-    public boolean didError() {
-        return didError;
+    public String getLoadSpecsException() {
+        return loadSpecsExceptionString;
     }
 
     public String getOS() {
@@ -4953,6 +5318,10 @@ public final class GetComputerSpecs {
         return hasCamera;
     }
 
+    public boolean getPossibleCustomDesktopOrBareMotherboard() {
+        return possibleCustomDesktopOrBareMotherboard;
+    }
+
     public String getBrand() {
         return brand;
     }
@@ -4961,12 +5330,28 @@ public final class GetComputerSpecs {
         return fullBrand;
     }
 
+    public String getMotherboardBrand() {
+        return motherboardBrand;
+    }
+
+    public String getFullMotherboardBrand() {
+        return fullMotherboardBrand;
+    }
+
     public String getModel() {
         return model;
     }
 
     public String getFullModel() {
         return fullModel;
+    }
+
+    public String getMotherboardModel() {
+        return motherboardModel;
+    }
+
+    public String getFullMotherboardModel() {
+        return fullMotherboardModel;
     }
 
     public String getMacShortModelName() {
@@ -4985,12 +5370,28 @@ public final class GetComputerSpecs {
         return fullSerial;
     }
 
+    public String getMotherboardSerial() {
+        return motherboardSerial;
+    }
+
+    public String getFullMotherboardSerial() {
+        return fullMotherboardSerial;
+    }
+
+    public String getBiosUUID() {
+        return biosUUID;
+    }
+
     public boolean getSerialIsMAC() {
         return serialIsMAC;
     }
 
     public String getEthernetMAC() {
-        return ethernetMAC;
+        return (ethernetMACarray.isEmpty() ? "N/A" : String.join(" + ", ethernetMACarray));
+    }
+
+    public ArrayList<String> getEthernetMACarray() {
+        return ethernetMACarray;
     }
 
     public String getCPU() {
@@ -5018,51 +5419,99 @@ public final class GetComputerSpecs {
     }
 
     public String getFullGPU() {
-        return fullGPU;
+        return (gpuArray.isEmpty() ? "N/A" : String.join(" + ", gpuArray));
+    }
+
+    public ArrayList<String> getGPUarray() {
+        return gpuArray;
     }
 
     public String getGPUids() {
-        return (gpuIDs.isEmpty() ? "N-A" : gpuIDs);
+        return (gpuIDsArray.isEmpty() ? "N-A" : String.join("+", gpuIDsArray));
+    }
+
+    public ArrayList<String> getGPUidsArray() {
+        return gpuIDsArray;
     }
 
     public String getGPUerrorString() {
-        return gpuErrorString;
+        return String.join(" + ", gpuErrorArray);
+    }
+
+    public ArrayList<String> getGPUerrorArray() {
+        return gpuErrorArray;
     }
 
     public String getAudio() {
         return audio;
     }
 
-    public String getAudioIDs() {
-        return (audioIDs.isEmpty() ? "N-A" : audioIDs);
+    public String getFullAudio() {
+        return (audioArray.isEmpty() ? "N/A" : String.join(" + ", audioArray));
     }
 
-    public String getFullAudio() {
-        return fullAudio;
+    public ArrayList<String> getAudioArray() {
+        return audioArray;
+    }
+
+    public String getAudioIDs() {
+        return (audioIDsArray.isEmpty() ? "N-A" : String.join("+", audioIDsArray));
+    }
+
+    public ArrayList<String> getAudioIDsArray() {
+        return audioIDsArray;
     }
 
     public String getAudioErrorString() {
-        return audioErrorString;
+        return String.join(" + ", audioErrorArray);
+    }
+
+    public ArrayList<String> getAudioErrorArray() {
+        return audioErrorArray;
     }
 
     public String getWireless() {
-        return wireless;
+        return (wirelessArray.isEmpty() ? "N/A" : String.join(" + ", wirelessArray));
+    }
+
+    public ArrayList<String> getWirelessArray() {
+        return wirelessArray;
     }
 
     public String getWirelessErrorString() {
-        return wirelessErrorString;
+        return String.join(" + ", wirelessErrorArray);
     }
 
-    public String getBatteryCapacity() {
-        return batteryCapacity;
+    public ArrayList<String> getWirelessErrorArray() {
+        return wirelessErrorArray;
     }
 
-    public String getBatteryHealthWarning() {
-        return String.join(" + ", batteryHealthWarning);
+    public String getBatteryHealthString() {
+        return (batteryHealthArray.isEmpty() ? "N/A" : String.join(" + ", batteryHealthArray));
     }
 
-    public String getBatteryHealthError() {
-        return String.join(" + ", batteryHealthError);
+    public ArrayList<String> getBatteryHealthArray() {
+        return batteryHealthArray;
+    }
+
+    public String getBatteryHealthWarningString() {
+        return String.join(" + ", batteryHealthWarningArray);
+    }
+
+    public ArrayList<String> getBatteryHealthWarningArray() {
+        return batteryHealthWarningArray;
+    }
+
+    public String getBatteryHealthErrorString() {
+        return String.join(" + ", batteryHealthErrorArray);
+    }
+
+    public ArrayList<String> getBatteryHealthErrorArray() {
+        return batteryHealthErrorArray;
+    }
+
+    public String getPowerAdapter() {
+        return powerAdapter;
     }
 
     public String getScreenSize() {
@@ -5074,7 +5523,11 @@ public final class GetComputerSpecs {
     }
 
     public String getScreenErrorString() {
-        return screenErrorString;
+        return String.join(" + ", screenErrorArray);
+    }
+
+    public ArrayList<String> getScreenErrorArray() {
+        return screenErrorArray;
     }
 
     public String getDiscDrive() {
@@ -5082,11 +5535,14 @@ public final class GetComputerSpecs {
     }
 
     public String getFullDiscDrive() {
-        return fullDiscDrive;
+        return (discDriveArray.isEmpty() ? "N/A" : String.join(" + ", discDriveArray));
+    }
+
+    public ArrayList<String> getDiscDriveArray() {
+        return discDriveArray;
     }
 
     public ArrayList<String> getDiscDriveLogicalNames() {
-        Collections.sort(discDriveLogicalNames);
         return discDriveLogicalNames;
     }
 
@@ -5107,7 +5563,23 @@ public final class GetComputerSpecs {
     }
 
     public String getFullStorage() {
-        return fullStorage;
+        return (storageArray.isEmpty() ? "N/A" : String.join(" + ", storageArray));
+    }
+
+    public ArrayList<String> getStorageArray() {
+        return storageArray;
+    }
+
+    public String getStorageSerial() {
+        return storageSerial;
+    }
+
+    public String getFullStorageSerial() {
+        return (storageSerialsArray.isEmpty() ? "" : String.join(" + ", storageSerialsArray));
+    }
+
+    public ArrayList<String> getStorageSerialsArray() {
+        return storageSerialsArray;
     }
 
     public boolean getDriveHealthWarning() {
@@ -5141,47 +5613,61 @@ public final class GetComputerSpecs {
         System.out.println("Has Screen: " + (hasScreen ? "Yes" : "No"));
         System.out.println("Has Touchscreen: " + (hasTouchscreen ? "Yes" : "No"));
         System.out.println("Has Camera: " + (hasCamera ? "Yes" : "No"));
+        System.out.println("Possible Custom Desktop or Bare Motherboard: " + (possibleCustomDesktopOrBareMotherboard ? "Yes" : "No"));
+
         System.out.println("");
         System.out.println("Brand: " + fullBrand);
+        System.out.println("Motherboard Brand: " + fullMotherboardBrand);
         System.out.println("Model: " + fullModel);
+        System.out.println("Motherboard Model: " + fullMotherboardModel);
         System.out.println("Serial: " + fullSerial);
-        System.out.println("Serial Is MAC: " + serialIsMAC);
-        System.out.println("MAC: " + ethernetMAC);
+        System.out.println("Motherboard Serial: " + fullMotherboardSerial);
+        System.out.println("Serial Is MAC: " + (serialIsMAC ? "Yes" : "No"));
+        System.out.println("MAC: " + getEthernetMAC());
+        System.out.println("BIOS UUID: " + biosUUID);
+
         System.out.println("");
         System.out.println("CPU: " + fullCPU);
         System.out.println("RAM: " + fullRAM);
-        System.out.println("GPU: " + fullGPU + (gpuErrorString.isEmpty() ? "" : " - " + gpuErrorString));
-        if (!gpuIDs.isEmpty()) {
-            System.out.println("GPU IDs: " + gpuIDs);
+        System.out.println("Wireless: " + getWireless() + (wirelessErrorArray.isEmpty() ? "" : " - " + getWirelessErrorString()));
+        System.out.println("Screen: " + fullScreenSize + (screenErrorArray.isEmpty() ? "" : " - " + getScreenErrorString()));
+        System.out.println("GPU: " + getFullGPU() + (gpuErrorArray.isEmpty() ? "" : " - " + getGPUerrorString()));
+        if (!gpuIDsArray.isEmpty()) {
+            System.out.println("GPU IDs: " + getGPUids());
         }
-        System.out.println("Audio: " + fullAudio + (audioErrorString.isEmpty() ? "" : " - " + audioErrorString));
-        if (!audioIDs.isEmpty()) {
-            System.out.println("Audio IDs: " + audioIDs);
+        System.out.println("Audio: " + getFullAudio() + (audioErrorArray.isEmpty() ? "" : " - " + getAudioErrorString()));
+        if (!audioIDsArray.isEmpty()) {
+            System.out.println("Audio IDs: " + getAudioIDs());
         }
-        System.out.println("Wireless: " + wireless + (wirelessErrorString.isEmpty() ? "" : " - " + wirelessErrorString));
+
         System.out.println("");
-        System.out.println("Battery: " + batteryCapacity);
-        String batteryHealthWarningString = getBatteryHealthWarning();
-        System.out.println("Battery Health Warning: " + (batteryHealthWarningString.isEmpty() ? "None" : batteryHealthWarningString));
-        String batteryHealthErrorString = getBatteryHealthError();
-        System.out.println("Battery Health Error: " + (batteryHealthErrorString.isEmpty() ? "None" : batteryHealthErrorString));
+        System.out.println("Battery Health: " + getBatteryHealthString());
+        String batteryHealthWarningString = getBatteryHealthWarningString();
+        System.out.println("Battery Warning: " + (batteryHealthWarningString.isEmpty() ? "None" : batteryHealthWarningString));
+        String batteryHealthErrorString = getBatteryHealthErrorString();
+        System.out.println("Battery Error: " + (batteryHealthErrorString.isEmpty() ? "None" : batteryHealthErrorString));
+        if (!powerAdapter.isEmpty()) {
+            System.out.println("Power Adapter: " + powerAdapter);
+        }
+
         System.out.println("");
-        System.out.println("Screen Size: " + fullScreenSize + screenErrorString);
-        System.out.println("");
-        System.out.println("Disc Drive: " + fullDiscDrive);
+        System.out.println("Disc Drive: " + getFullDiscDrive());
         System.out.println("Disc Drive Logical Names: " + String.join(", ", discDriveLogicalNames));
         System.out.println("Disc Drive Can Burn CDs: " + (discDriveCanBurnCDs ? "Yes" : "No"));
         System.out.println("Disc Drive Can Burn DVDs: " + (discDriveCanBurnDVDs ? "Yes" : "No"));
         System.out.println("Disc in Disc Drive: " + (hasDiscInDiscDrive ? "Yes" : "No"));
+
         System.out.println("");
-        System.out.println("Storage: " + fullStorage);
-        System.out.println("Drive Health Warning: " + (driveHealthWarning ? "Yes" : "No"));
+        System.out.println("Storage: " + getFullStorage());
+        System.out.println("Storage Serial: " + getFullStorageSerial());
+        System.out.println("Storage Health Warning: " + (driveHealthWarning ? "Yes" : "No"));
         System.out.println("Drive TRIM Warning: " + (driveTrimWarning ? "Yes" : "No"));
         System.out.println("Drive Recalled: " + (driveRecalled ? "Yes" : "No"));
         String disksFormattedWithoutPartitionTableString = getDisksFormattedWithoutPartitionTable();
         System.out.println("Disks Formatted Without Partition Table: " + (disksFormattedWithoutPartitionTableString.isEmpty() ? "None" : disksFormattedWithoutPartitionTableString));
-        System.out.println("Drive Health:");
+        System.out.println("Storage Health:");
         System.out.println(driveHealth);
+
         System.out.println("");
     }
 }

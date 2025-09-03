@@ -37,15 +37,16 @@ import javax.swing.ImageIcon;
 public class TwemojiImage {
 
     String name;
-    double userScalingFactor;
-    double systemScalingFactor;
+    double userScaleFactor;
+    double systemScaleFactor;
 
     boolean isMacOS;
     boolean isWindows;
 
     public TwemojiImage(String emojiName, Window window) {
-        isMacOS = System.getProperty("os.name").startsWith("Mac OS X") || System.getProperty("os.name").startsWith("macOS");
-        isWindows = System.getProperty("os.name").startsWith("Windows");
+        String osName = System.getProperty("os.name");
+        isMacOS = osName.startsWith("Mac OS X") || osName.startsWith("macOS");
+        isWindows = osName.startsWith("Windows");
 
         name = emojiName.replace(" ", "");
         if (name.equals("AppIcon")) {
@@ -54,15 +55,15 @@ public class TwemojiImage {
 
         // Linux Mint uses userScaleFactor for HiDPI while macOS and Windows use systemScaleFactor for HiDPI.
         // This code only handles whole and half number scaling factors because thosea are the only PNG sizes I've included. (125% scaling will use 150% sizes and 175% scaling will use 200% sizes).
-        userScalingFactor = (Math.round(UIScale.getUserScaleFactor() * 2.0) / 2.0);
-        systemScalingFactor = (Math.round(UIScale.getSystemScaleFactor((window != null) ? window.getGraphicsConfiguration() : GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration()) * 2.0) / 2.0);
+        userScaleFactor = (Math.round(UIScale.getUserScaleFactor() * 2.0) / 2.0);
+        systemScaleFactor = (Math.round(UIScale.getSystemScaleFactor((window != null) ? window.getGraphicsConfiguration() : GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration()) * 2.0) / 2.0);
     }
 
     public String toImgTag(String positionInText) {
         int size = 16;
 
-        int userScaledSize = (int) Math.round(size * userScalingFactor);
-        int userAndSystemScaledSize = (int) Math.round(userScaledSize * systemScalingFactor);
+        int userScaledSize = (int) Math.round(size * userScaleFactor);
+        int userAndSystemScaledSize = (int) Math.round(userScaledSize * systemScaleFactor);
 
         if (userAndSystemScaledSize < 24) {
             userAndSystemScaledSize = 16;
@@ -88,7 +89,7 @@ public class TwemojiImage {
 
         return ((thisEmojiURL == null) ? "<b>[MISSING EMOJI: " + name + "]</b>"
                 : ((positionInText.equals("right") || positionInText.equals("inline")) ? "&nbsp;" : "")
-                + "<img width='" + userScaledSize + "' height='" + (userScaledSize - ((isWindows && String.valueOf(systemScalingFactor).endsWith(".5")) ? 1 : 0)) + "' src='" + thisEmojiURL.toString() + "' />"
+                + "<img width='" + userScaledSize + "' height='" + (userScaledSize - ((isWindows && String.valueOf(systemScaleFactor).endsWith(".5")) ? 1 : 0)) + "' src='" + thisEmojiURL.toString() + "' />"
                 + ((positionInText.equals("left") || positionInText.equals("inline")) ? "&nbsp;" : ""));
     }
 
@@ -105,14 +106,14 @@ public class TwemojiImage {
     }
 
     public ImageIcon toImageIcon(int size, boolean shouldTrimTopTransparentPixels) {
-        int userScaledSize = (int) Math.round(size * userScalingFactor);
-        int userAndSystemScaledSize = (int) Math.round(userScaledSize * systemScalingFactor);
+        int userScaledSize = (int) Math.round(size * userScaleFactor);
+        int userAndSystemScaledSize = (int) Math.round(userScaledSize * systemScaleFactor);
 
         // For Linux, the userScaleFactor needs to be applied to base image size or it will be too small in the window, on other OSes the userScaleFactor will be 1 so it won't hurt.
         URL thisEmojiURL = this.getClass().getResource("/Resources/Twemoji/" + name + userScaledSize + ".png");
 
         if (thisEmojiURL == null) {
-            userAndSystemScaledSize = (int) Math.round(size * systemScalingFactor);
+            userAndSystemScaledSize = (int) Math.round(size * systemScaleFactor);
             thisEmojiURL = this.getClass().getResource("/Resources/Twemoji/" + name + size + ".png");
         }
 

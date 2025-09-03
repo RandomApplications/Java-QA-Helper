@@ -33,8 +33,8 @@ if grep 'addGap(18, 18, 18)' './'*'.java'; then
     sed -i '' 's/addGap(18, 18, 18)/addGap(UIScale.scale(18), UIScale.scale(18), UIScale.scale(18))/' './'*'.java'
 fi
 
-if grep 'addGap(24, 24, 24)' './'*'.java'; then
-    sed -i '' 's/addGap(24, 24, 24)/addGap(UIScale.scale(24), UIScale.scale(24), UIScale.scale(24))/' './'*'.java'
+if grep 'addGap(26, 26, 26)' './'*'.java'; then
+    sed -i '' 's/addGap(26, 26, 26)/addGap(UIScale.scale(26), UIScale.scale(26), UIScale.scale(26))/' './'*'.java'
 fi
 
 if grep 'addGap(18, 18, Short.MAX_VALUE)' './'*'.java'; then

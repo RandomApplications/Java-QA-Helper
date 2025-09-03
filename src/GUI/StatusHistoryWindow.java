@@ -21,13 +21,17 @@ package GUI;
 import SOAP.SOAPParse;
 import Utilities.*;
 import com.formdev.flatlaf.util.UIScale;
+import java.awt.Desktop;
 import java.io.File;
+import java.io.IOException;
+import java.net.URISyntaxException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import javax.swing.JLabel;
+import javax.swing.event.HyperlinkEvent;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 
@@ -36,40 +40,60 @@ import javax.swing.table.DefaultTableModel;
  *
  * @author Stefani Monson (of PCs for People) & Pico Mitchell (of Free Geek)
  */
-public class PIDHistoryWindow extends javax.swing.JFrame {
+public class StatusHistoryWindow extends javax.swing.JFrame {
 
     private final ArrayList<HashMap<String, String>> historyData;
+    private final PrivateStrings privateStrings = new PrivateStrings();
+    private final String[] rawColumnNames = privateStrings.getPCsCRMStatusHistoryRawColumnNames();
+    private final String[] displayColumnNames = privateStrings.getPCsCRMStatusHistoryDisplayColumnNames();
+    private PCsCRMManager PCsCRMManager;
+    private boolean isTestMode = false;
 
     /**
-     * Creates new form PIDHistoryWindow
+     * Creates new form StatusHistoryWindow
      *
-     * @param statusHistoryDataXML
+     * @param statusHistoryDataContent
      * @param loggedSpecs
+     * @param passedPCsCRMManager
      * @param testMode
      */
-    public PIDHistoryWindow(String statusHistoryDataXML, HashMap<String, String> loggedSpecs, boolean testMode) {
+    public StatusHistoryWindow(String statusHistoryDataContent, HashMap<String, String> loggedSpecs, PCsCRMManager passedPCsCRMManager, boolean testMode) {
+        PCsCRMManager = passedPCsCRMManager;
+        isTestMode = testMode;
+
         historyData = new ArrayList<>();
 
-        try {
-            ArrayList<HashMap<String, String>> statusHistoryData = new SOAPParse().parseDataset(statusHistoryDataXML);
+        if ((statusHistoryDataContent != null) && statusHistoryDataContent.startsWith("<?xml")) {
+            try {
+                ArrayList<HashMap<String, String>> statusHistoryData = new SOAPParse().parseDataset(statusHistoryDataContent);
 
-            // Must sort because may come from the API out of order.
-            String rawDateHeaderName = new PrivateStrings().getPCsCRMStatusHistoryRawHeaderNames()[0];
-            Collections.sort(statusHistoryData, (HashMap<String, String> thisRow, HashMap<String, String> thatRow) -> {
-                return thisRow.get(rawDateHeaderName).compareTo(thatRow.get(rawDateHeaderName)); // Sort as strings because converting to Date() loses sub-second precision.
-            });
+                if ((statusHistoryData != null) && !statusHistoryData.isEmpty()) {
+                    // Must sort because may come from the API out of order.
+                    String rawDateColumnName = rawColumnNames[0];
+                    Collections.sort(statusHistoryData, (HashMap<String, String> thisRow, HashMap<String, String> thatRow) -> {
+                        return thatRow.get(rawDateColumnName).compareTo(thisRow.get(rawDateColumnName)); // Sort as strings because converting to Date() loses sub-second precision.
+                    });
 
-            historyData.addAll(statusHistoryData);
-        } catch (Exception parseStatusHistoryException) {
-            System.out.println("parseStatusHistoryException: " + parseStatusHistoryException);
+                    historyData.addAll(statusHistoryData);
+                }
+            } catch (Exception parseStatusHistoryException) {
+                System.out.println("parseStatusHistoryException: " + parseStatusHistoryException);
+            }
+        }
+
+        if (historyData.isEmpty()) {
+            historyData.add(new HashMap<>());
+            historyData.get(0).put(rawColumnNames[0], "UNKNOWN DATE");
+            historyData.get(0).put(rawColumnNames[1], "UNKNOWN STATUS");
+            historyData.get(0).put(rawColumnNames[2], "UNKNOWN TECH");
         }
 
         initComponents();
 
-        setMinimumSize(UIScale.scale(getMinimumSize())); // Scale window minimum size by userScalingFactor for correct minimum size with HiDPI on Linux.
+        setMinimumSize(UIScale.scale(getMinimumSize())); // Scale window minimum size by userScaleFactor for correct minimum size with HiDPI on Linux.
 
-        pidHistoryTabbedPane.setIconAt(0, new TwemojiImage("MagnifyingGlassTiltedLeft", this).toImageIcon(16));
-        pidHistoryTabbedPane.setIconAt(1, new TwemojiImage("Memo", this).toImageIcon(16));
+        statusHistoryTabbedPane.setIconAt(0, new TwemojiImage("MagnifyingGlassTiltedLeft", this).toImageIcon(16));
+        statusHistoryTabbedPane.setIconAt(1, new TwemojiImage("Memo", this).toImageIcon(16));
 
         statusHistoryPane.setBorder(null); // Not sure why this needs to be set again to take effect when it's already set in initComponents(), but it is needed.
 
@@ -90,16 +114,16 @@ public class PIDHistoryWindow extends javax.swing.JFrame {
                 String thisSpecValue = thisSpec.getValue();
 
                 switch (thisSpecKey) {
-                    case "PID":
-                        setTitle("QA Helper  —  PID History for " + thisSpecValue.toUpperCase());
+                    case "ID":
+                        setTitle("QA Helper  —  Status History for " + thisSpecValue.toUpperCase());
                         break;
-                    case "Brand":
+                    case "Status":
                         specsDisplayHTML += "<div style='padding: 10px;'><b>" + thisSpecKey + ":</b><br/>" + thisSpecValue + "</div>";
                         break;
                     default:
-                        specsDisplayHTML += "<div style='padding: 10px; border-top: 1px solid #CCCCCC;'><b>" + thisSpecKey + ":</b><br/>" + thisSpecValue + "</div>";
+                        specsDisplayHTML += "<div style='padding: 10px; border-top: 1px solid #CCCCCC;'><b>" + thisSpecKey + ":</b>" + (thisSpecValue.startsWith("<br/>") ? "" : "<br/>") + ((thisSpecValue.startsWith("http://") || thisSpecValue.startsWith("https://")) ? ("<a href=\"" + thisSpecValue + "\">" + thisSpecValue + "</a>") : thisSpecValue) + "</div>"; // Notes field could start with "<br/>".
 
-                        if (testMode && thisSpecKey.equals("Disc Drive")) {
+                        if (testMode && thisSpecKey.equals("Notes")) {
                             specsDisplayHTML += "<div style='padding: 10px; border-top: 1px solid #CCCCCC; text-align: center'><b><i>BELOW THIS LINE ARE ALL AVAILABLE FIELDS FOR TEST MODE</i></b></div>";
                         }
 
@@ -109,29 +133,35 @@ public class PIDHistoryWindow extends javax.swing.JFrame {
             specsDisplayHTML += "</html>";
 
             loggedSpecsEditorPane.setText(specsDisplayHTML);
+
+            loggedSpecsEditorPane.addHyperlinkListener((HyperlinkEvent hyperlinkEvent) -> {
+                if (HyperlinkEvent.EventType.ACTIVATED.equals(hyperlinkEvent.getEventType())) {
+                    try {
+                        Desktop.getDesktop().browse(hyperlinkEvent.getURL().toURI());
+                    } catch (IOException | URISyntaxException openLoggedSpecsLinkException) {
+                        System.out.println("openLoggedSpecsLinkException: " + openLoggedSpecsLinkException);
+                    }
+                }
+            });
         }
     }
 
     private DefaultTableModel getData() {
-        String[] displayHeaders = new PrivateStrings().getPCsCRMStatusHistoryDisplayHeaderNames();
-
-        DefaultTableModel dtm = new DefaultTableModel(displayHeaders.length, 0) {
+        DefaultTableModel dtm = new DefaultTableModel(displayColumnNames.length, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
             }
         };
 
-        dtm.setColumnIdentifiers(displayHeaders);
+        dtm.setColumnIdentifiers(displayColumnNames);
         dtm.setRowCount(0);
 
-        String[] rawHeaders = new PrivateStrings().getPCsCRMStatusHistoryRawHeaderNames();
-
         for (HashMap<String, String> row : historyData) {
-            String[] rowArray = new String[displayHeaders.length];
+            String[] rowArray = new String[displayColumnNames.length];
             int i = 0;
             for (String key : row.keySet()) {
-                if (key.equals(rawHeaders[0])) {
+                if (key.equals(rawColumnNames[0])) {
                     String thisDateString = row.get(key);
 
                     try {
@@ -143,27 +173,31 @@ public class PIDHistoryWindow extends javax.swing.JFrame {
                     } catch (ParseException parseDateException) {
                         rowArray[0] = thisDateString;
                     }
-                } else if (key.equals(rawHeaders[1])) {
+                } else if (key.equals(rawColumnNames[1])) {
                     rowArray[1] = row.get(key);
-                } else if (key.equals(rawHeaders[2])) {
-                    String rawUsername = row.get(rawHeaders[2]).toLowerCase();
-                    String[] usernameParts = rawUsername.split("[^a-z0-9]");
+                } else if (key.equals(rawColumnNames[2])) {
+                    String rawUsername = row.get(rawColumnNames[2]);
+                    if (rawUsername.equals("UNKNOWN TECH")) {
+                        rowArray[2] = rawUsername;
+                    } else {
+                        rawUsername = rawUsername.toLowerCase();
 
-                    String displayUsername = rawUsername;
+                        String displayName = rawUsername;
 
-                    if (usernameParts.length > 1) {
-                        for (String thisUsernamePart : usernameParts) {
-                            String capitalizedUsernamePart = thisUsernamePart.substring(0, 1).toUpperCase() + thisUsernamePart.substring(1);
+                        try {
+                            HashMap<String, String> thisUserInfo = PCsCRMManager.getUserInfo(rawUsername, isTestMode);
 
-                            if (displayUsername.equals(rawUsername)) {
-                                displayUsername = capitalizedUsernamePart;
-                            } else {
-                                displayUsername += " " + capitalizedUsernamePart;
+                            if (thisUserInfo.containsKey("displayName")) {
+                                displayName = thisUserInfo.get("displayName");
+                            }
+                        } catch (Exception getUserInfoException) {
+                            if (isTestMode) {
+                                System.out.println("getUserInfoException: " + getUserInfoException);
                             }
                         }
-                    }
 
-                    rowArray[2] = displayUsername;
+                        rowArray[2] = displayName;
+                    }
                 }
 
                 i++;
@@ -180,28 +214,33 @@ public class PIDHistoryWindow extends javax.swing.JFrame {
         return dtm;
     }
 
-    public String[] getLatestStatusAndTech() {
-        HashMap<String, String> latestHistoryItem = historyData.get(historyData.size() - 1);
-        String[] rawHeaders = new PrivateStrings().getPCsCRMStatusHistoryRawHeaderNames();
+    public String getLatestTech() {
+        if (historyData.isEmpty()) {
+            return "UNKNOWN TECH";
+        }
 
-        String rawUsername = latestHistoryItem.get(rawHeaders[2]).toLowerCase();
-        String[] usernameParts = rawUsername.split("[^a-z0-9]");
+        HashMap<String, String> latestHistoryItem = historyData.get(0);
+        String rawUsername = latestHistoryItem.get(rawColumnNames[2]);
+        if (rawUsername.equals("UNKNOWN TECH")) {
+            return rawUsername;
+        }
+        rawUsername = rawUsername.toLowerCase();
 
-        String displayUsername = rawUsername;
+        String displayName = rawUsername;
 
-        if (usernameParts.length > 1) {
-            for (String thisUsernamePart : usernameParts) {
-                String capitalizedUsernamePart = thisUsernamePart.substring(0, 1).toUpperCase() + thisUsernamePart.substring(1);
+        try {
+            HashMap<String, String> thisUserInfo = PCsCRMManager.getUserInfo(rawUsername, isTestMode);
 
-                if (displayUsername.equals(rawUsername)) {
-                    displayUsername = capitalizedUsernamePart;
-                } else {
-                    displayUsername += " " + capitalizedUsernamePart;
-                }
+            if (thisUserInfo.containsKey("displayName")) {
+                displayName = thisUserInfo.get("displayName");
+            }
+        } catch (Exception getUserInfoException) {
+            if (isTestMode) {
+                System.out.println("getUserInfoException: " + getUserInfoException);
             }
         }
 
-        return new String[]{latestHistoryItem.get(rawHeaders[1]), displayUsername};
+        return displayName;
     }
 
     /**
@@ -211,19 +250,18 @@ public class PIDHistoryWindow extends javax.swing.JFrame {
     // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
     private void initComponents() {
 
-        pidHistoryTabbedPane = new javax.swing.JTabbedPane();
+        statusHistoryTabbedPane = new javax.swing.JTabbedPane();
         statusHistoryPane = new javax.swing.JScrollPane();
         tblHistory = new javax.swing.JTable();
         loggedSpecsPane = new javax.swing.JScrollPane();
         loggedSpecsEditorPane = new javax.swing.JEditorPane();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.DISPOSE_ON_CLOSE);
-        setTitle("QA Helper  —  PID History");
-        setBounds(new java.awt.Rectangle(0, 23, 800, 300));
+        setTitle("QA Helper  —  Status History");
         setIconImages(new TwemojiImage("AppIcon", this).toImageIconsForFrame());
         setLocationByPlatform(true);
         setMinimumSize(new java.awt.Dimension(800, 300));
-        setName("pidHistoryFrame"); // NOI18N
+        setName("statusHistoryFrame"); // NOI18N
 
         statusHistoryPane.setBorder(null);
 
@@ -234,7 +272,7 @@ public class PIDHistoryWindow extends javax.swing.JFrame {
         tblHistory.getTableHeader().setReorderingAllowed(false);
         statusHistoryPane.setViewportView(tblHistory);
 
-        pidHistoryTabbedPane.addTab("Status History", statusHistoryPane);
+        statusHistoryTabbedPane.addTab("Status History", statusHistoryPane);
 
         loggedSpecsPane.setBorder(null);
 
@@ -242,17 +280,17 @@ public class PIDHistoryWindow extends javax.swing.JFrame {
         loggedSpecsEditorPane.setContentType("text/html"); // NOI18N
         loggedSpecsPane.setViewportView(loggedSpecsEditorPane);
 
-        pidHistoryTabbedPane.addTab("Logged Specs", loggedSpecsPane);
+        statusHistoryTabbedPane.addTab("Logged Specs", loggedSpecsPane);
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
         layout.setHorizontalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addComponent(pidHistoryTabbedPane, javax.swing.GroupLayout.DEFAULT_SIZE, 732, Short.MAX_VALUE)
+            .addComponent(statusHistoryTabbedPane, javax.swing.GroupLayout.DEFAULT_SIZE, 732, Short.MAX_VALUE)
         );
         layout.setVerticalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addComponent(pidHistoryTabbedPane, javax.swing.GroupLayout.DEFAULT_SIZE, 296, Short.MAX_VALUE)
+            .addComponent(statusHistoryTabbedPane, javax.swing.GroupLayout.DEFAULT_SIZE, 296, Short.MAX_VALUE)
         );
 
         pack();
@@ -261,8 +299,8 @@ public class PIDHistoryWindow extends javax.swing.JFrame {
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JEditorPane loggedSpecsEditorPane;
     private javax.swing.JScrollPane loggedSpecsPane;
-    private javax.swing.JTabbedPane pidHistoryTabbedPane;
     private javax.swing.JScrollPane statusHistoryPane;
+    private javax.swing.JTabbedPane statusHistoryTabbedPane;
     private javax.swing.JTable tblHistory;
     // End of variables declaration//GEN-END:variables
 }

@@ -18,9 +18,10 @@
  */
 package Utilities;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
-import java.util.Scanner;
 
 /**
  * This class reads commands determined by constructor and returns all lines or line containing a given string
@@ -29,26 +30,26 @@ import java.util.Scanner;
  */
 public class CommandReader {
 
-    Scanner reader;
-    boolean isWindows = System.getProperty("os.name").startsWith("Windows");
+    private BufferedReader commandReader;
+    private final boolean isWindows = System.getProperty("os.name").startsWith("Windows");
 
-    public CommandReader(String command) {
-        initCommandReader((isWindows ? new String[]{"\\Windows\\System32\\cmd.exe", "/c", command} : new String[]{"/bin/sh", "-c", command}));
+    public CommandReader(String commandString) {
+        initCommandReader((isWindows ? new String[]{"\\Windows\\System32\\cmd.exe", "/c", commandString} : new String[]{"/bin/sh", "-c", commandString}));
     }
 
-    public CommandReader(String[] command) {
-        initCommandReader(command);
+    public CommandReader(String[] commandArray) {
+        initCommandReader(commandArray);
     }
 
-    private void initCommandReader(String[] command) {
+    private void initCommandReader(String[] commandArray) {
         try {
-            reader = new Scanner(Runtime.getRuntime().exec(command).getInputStream()).useDelimiter("\n");
+            commandReader = new BufferedReader(new InputStreamReader(Runtime.getRuntime().exec(commandArray).getInputStream()));
         } catch (IOException commandReaderException) {
-            reader = null;
+            commandReader = null;
             // Ignore Error
 
             //JOptionPane.showMessageDialog(null, "<html><b>Failed To Perform Command</b><br/><br/>" + Arrays.toString(command) + "</html>", "QA Helper  —  Command Error", JOptionPane.ERROR_MESSAGE);
-            //System.out.println(commandReaderException);
+            //System.out.println("commandReaderException: " + commandReaderException);
         }
     }
 
@@ -57,49 +58,63 @@ public class CommandReader {
     }
 
     public String getFirstOutputLineContaining(String match) {
-        if (reader == null) {
+        if (commandReader == null) {
             return "";
         }
 
         boolean getFirstLine = match.isEmpty();
 
-        while (reader.hasNext()) {
-            String thisLine = reader.nextLine();
+        String outputLine = "";
 
-            if (getFirstLine || thisLine.contains(match)) {
-                reader.close();
-                return thisLine;
+        try {
+            String thisLine;
+            while ((thisLine = commandReader.readLine()) != null) {
+                if (getFirstLine || thisLine.contains(match)) {
+                    outputLine = thisLine;
+                    break;
+                }
             }
+
+            commandReader.close();
+        } catch (IOException readLineException) {
 
         }
 
-        reader.close();
-        return "";
+        return outputLine;
     }
 
     public String getFirstOutputLineNotContaining(String match) {
-        if (reader == null) {
+        if (commandReader == null) {
             return "";
         }
 
         boolean getFirstNonEmptyLine = match.isEmpty();
 
-        while (reader.hasNext()) {
-            String thisLine = reader.nextLine();
+        String outputLine = "";
 
-            if ((getFirstNonEmptyLine && !thisLine.isEmpty()) || !thisLine.contains(match)) {
-                reader.close();
-                return thisLine;
+        try {
+            String thisLine;
+            while ((thisLine = commandReader.readLine()) != null) {
+                if ((getFirstNonEmptyLine && !thisLine.isEmpty()) || !thisLine.contains(match)) {
+                    outputLine = thisLine;
+                    break;
+                }
             }
+
+            commandReader.close();
+        } catch (IOException readLineException) {
 
         }
 
-        reader.close();
-        return "";
+        return outputLine;
     }
 
     public String[] getOutputLines() {
         return getOutputLinesContaining(new String[]{""});
+    }
+
+    public String getOutputLinesAsString() {
+        return String.join("\n", getOutputLines());
     }
 
     public String[] getOutputLinesContaining(String match) {
@@ -107,7 +122,7 @@ public class CommandReader {
     }
 
     public String[] getOutputLinesContaining(String[] matches) {
-        if (reader == null || matches.length == 0) {
+        if ((commandReader == null) || (matches.length == 0)) {
             return new String[0];
         }
 
@@ -121,22 +136,25 @@ public class CommandReader {
             }
         }
 
-        while (reader.hasNext()) {
-            String thisLine = reader.nextLine();
-
-            if (matchAllLines) {
-                outputLines.add(thisLine);
-            } else {
-                for (String thisMatch : matches) {
-                    if (thisLine.contains(thisMatch)) {
-                        outputLines.add(thisLine);
-                        break;
+        try {
+            String thisLine;
+            while ((thisLine = commandReader.readLine()) != null) {
+                if (matchAllLines) {
+                    outputLines.add(thisLine);
+                } else {
+                    for (String thisMatch : matches) {
+                        if (thisLine.contains(thisMatch)) {
+                            outputLines.add(thisLine);
+                            break;
+                        }
                     }
                 }
             }
-        }
 
-        reader.close();
+            commandReader.close();
+        } catch (IOException readLineException) {
+
+        }
 
         return outputLines.toArray(String[]::new);
     }
@@ -146,7 +164,7 @@ public class CommandReader {
     }
 
     public String[] getOutputLinesNotContaining(String[] matches) {
-        if (reader == null || matches.length == 0) {
+        if ((commandReader == null) || (matches.length == 0)) {
             return new String[0];
         }
 
@@ -160,26 +178,29 @@ public class CommandReader {
             }
         }
 
-        while (reader.hasNext()) {
-            String thisLine = reader.nextLine();
+        try {
+            String thisLine;
+            while ((thisLine = commandReader.readLine()) != null) {
+                if (!matchNonEmptyLines || (matchNonEmptyLines && !thisLine.isEmpty())) {
+                    boolean lineContainsMatch = false;
 
-            if (!matchNonEmptyLines || (matchNonEmptyLines && !thisLine.isEmpty())) {
-                boolean lineContainsMatch = false;
+                    for (String thisMatch : matches) {
+                        if (!thisMatch.isEmpty() && thisLine.contains(thisMatch)) {
+                            lineContainsMatch = true;
+                            break;
+                        }
+                    }
 
-                for (String thisMatch : matches) {
-                    if (!thisMatch.isEmpty() && thisLine.contains(thisMatch)) {
-                        lineContainsMatch = true;
-                        break;
+                    if (!lineContainsMatch) {
+                        outputLines.add(thisLine);
                     }
                 }
-
-                if (!lineContainsMatch) {
-                    outputLines.add(thisLine);
-                }
             }
-        }
 
-        reader.close();
+            commandReader.close();
+        } catch (IOException readLineException) {
+
+        }
 
         return outputLines.toArray(String[]::new);
     }

@@ -1,7 +1,7 @@
 #
 # Created by Pico Mitchell (of Free Geek) on 08/23/19
 # For QA Helper
-# Last Updated: 02/29/24
+# Last Updated: 8/25/25
 #
 # MIT License
 #
@@ -22,6 +22,8 @@ param(
 	[Parameter(Position = 0)]
 	[String]$Mode
 )
+
+$ProgressPreference = 'SilentlyContinue' # Not showing progress makes "Invoke-WebRequest" downloads MUCH faster: https://stackoverflow.com/a/43477248
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12, [Net.SecurityProtocolType]::Ssl3
 
@@ -193,9 +195,9 @@ if (-not $uninstall) {
 				if (Test-Path "$Env:TEMP\QAHelper-jar.zip") {
 					Remove-Item "$Env:TEMP\QAHelper-jar.zip" -Force -ErrorAction Stop
 				}
-				
+
 				Invoke-WebRequest "$downloadURL/QAHelper-windows-jar.zip" -OutFile "$Env:TEMP\QAHelper-jar.zip" -ErrorAction Stop
-				
+
 				if (Test-Path "$Env:TEMP\QAHelper-jar.zip") {
 					Write-Output '    Unarchiving QA Helper Applet and Moving to Install Location...'
 					
@@ -240,7 +242,7 @@ if (-not $uninstall) {
 		if (Test-Path "$installPath\java-jre\bin\javaw.exe") {
 			Write-Host "`n`n  SKIPPING JAVA INSTALLATION: Java Was Already Installed" -ForegroundColor Yellow
 		} else {
-			$jdkVersion = '21.0.2+13'
+			$jdkVersion = '21.0.8+9'
 
 			Write-Output "`n`n  Installing Java $($jdkVersion.Replace('_', '+')):"
 			

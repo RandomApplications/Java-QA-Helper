@@ -49,13 +49,12 @@ if [[ "${BUILD_VERSION}" != *'-0' ]]; then # Only check for updates when buildin
 				if osascript -e "display dialog \"NetBeans version ${LATEST_NETBEANS_VERSION} is now available!
 
 NetBeans version ${INSTALLED_NETBEANS_VERSION} is currently installed.\" buttons {\"Continue Build with NetBeans ${INSTALLED_NETBEANS_VERSION}\", \"Download NetBeans ${LATEST_NETBEANS_VERSION}\"} cancel button 1 default button 2 with title \"Newer NetBeans Available\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
-					echo '  CANCELING BUILD TO DOWNLOAD NEWER NETBEANS'
+					echo '  OPENING DOWNLOAD NEWER NETBEANS LINK'
 					open "https://netbeans.apache.org/$(curl -m 5 -sfL 'https://netbeans.apache.org' | xmllint --html --xpath 'string(//a[@class="button success"]/@href)' - 2> /dev/null)"
-					exit 1
 				fi
 			fi
 		else
-			echo -e '  FAILED TO GET LATEST NETBEANS VERSION\n'
+			echo -e '  FAILED TO GET LATEST NETBEANS VERSION'
 			afplay /System/Library/Sounds/Basso.aiff
 		fi
 
@@ -78,15 +77,12 @@ NetBeans version ${INSTALLED_NETBEANS_VERSION} is currently installed.\" buttons
 				if osascript -e "display dialog \"JDK version ${LATEST_JDK_VERSION} is now available!
 
 JDK version ${INSTALLED_JDK_VERSION} is currently installed.\" buttons {\"Continue Build with JDK ${INSTALLED_JDK_VERSION}\", \"Download JDK ${LATEST_JDK_VERSION}\"} cancel button 1 default button 2 with title \"Newer JDK Available for QA Helper\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
-					echo '  CANCELING BUILD TO DOWNLOAD NEWER JDK'
-
+					echo '  OPENING DOWNLOAD NEWER JDK LINK'
 					open "https://api.adoptium.net/v3/binary/latest/21/ga/mac/$([[ "$(sysctl -in hw.optional.arm64)" == '1' ]] && echo 'aarch64' || echo 'x64')/jdk/hotspot/normal/eclipse"
-
-					exit 1
 				fi
 			fi
 		else
-			echo -e '  FAILED TO GET LATEST JDK VERSION\n'
+			echo -e '  FAILED TO GET LATEST JDK VERSION'
 			afplay /System/Library/Sounds/Basso.aiff
 		fi
 
@@ -98,8 +94,8 @@ JDK version ${INSTALLED_JDK_VERSION} is currently installed.\" buttons {\"Contin
 		readonly INSTALLED_FLATLAF_VERSION
 		echo "  Installed FlatLaf Version: ${INSTALLED_FLATLAF_VERSION}"
 
-		# The "https://maven-badges.herokuapp.com" URLs seem to fail more frequently lately, maybe because of rate-limiting, so use "--retry 2" to try a total of 3 times with the default "curl" delays which seem to help.
-		LATEST_FLATLAF_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.herokuapp.com/maven-central/com.formdev/flatlaf' | awk -F '/' '{ print $7; exit }')"
+		# The "https://maven-badges.sml.io" URLs seem to fail more frequently lately, maybe because of rate-limiting, so use "--retry 2" to try a total of 3 times with the default "curl" delays which seem to help.
+		LATEST_FLATLAF_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/com.formdev/flatlaf' | awk -F '/' '{ print $7; exit }')"
 		readonly LATEST_FLATLAF_VERSION
 
 		if [[ -n "${LATEST_FLATLAF_VERSION}" ]]; then
@@ -109,14 +105,86 @@ JDK version ${INSTALLED_JDK_VERSION} is currently installed.\" buttons {\"Contin
 				if osascript -e "display dialog \"FlatLaf version ${LATEST_FLATLAF_VERSION} is now available!
 
 FlatLaf version ${INSTALLED_FLATLAF_VERSION} is currently installed.\" buttons {\"Continue Build with FlatLaf ${INSTALLED_FLATLAF_VERSION}\", \"Download FlatLaf ${LATEST_FLATLAF_VERSION}\"} cancel button 1 default button 2 with title \"Newer FlatLaf Available for QA Helper\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
-					echo '  CANCELING BUILD TO DOWNLOAD NEWER FLATLAF'
-					open 'https://maven-badges.herokuapp.com/maven-central/com.formdev/flatlaf'
-					exit 1
+					echo '  OPENING DOWNLOAD NEWER FLATLAF LINK'
+					open 'https://maven-badges.sml.io/maven-central/com.formdev/flatlaf'
 				fi
 			fi
 		else
-			echo -e '  FAILED TO GET LATEST FLATLAF VERSION\n'
+			echo -e '  FAILED TO GET LATEST FLATLAF VERSION'
 			afplay /System/Library/Sounds/Basso.aiff
+		fi
+
+		echo -e '\nChecking for org.json Update...'
+		# Suppress ShellCheck suggestion to use "find" instead of "ls" since we need "ls -t" to sort by modification date, and this path shouldn't contain non-alphanumeric characters.
+		# shellcheck disable=SC2012
+		INSTALLED_ORGJSON_VERSION="$(ls -t "${PROJECT_PATH}/libs/json-"* | awk -F '-|[.]jar' '{ print $(NF-1); exit }')"
+		readonly INSTALLED_ORGJSON_VERSION
+		echo "  Installed org.json Version: ${INSTALLED_ORGJSON_VERSION}"
+
+		if [[ -n "${LATEST_FLATLAF_VERSION}" ]]; then
+			# The "https://maven-badges.sml.io" URLs seem to fail more frequently lately, maybe because of rate-limiting, so use "--retry 2" to try a total of 3 times with the default "curl" delays which seem to help.
+			LATEST_ORGJSON_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/org.json/json' | awk -F '/' '{ print $7; exit }')"
+			readonly LATEST_ORGJSON_VERSION
+
+			if [[ -n "${LATEST_ORGJSON_VERSION}" ]]; then
+				echo "     Latest org.json Version: ${LATEST_ORGJSON_VERSION}"
+
+				if [[ "${LATEST_ORGJSON_VERSION}" != "${INSTALLED_ORGJSON_VERSION}" ]]; then
+					if osascript -e "display dialog \"org.json version ${LATEST_ORGJSON_VERSION} is now available!
+
+org.json version ${INSTALLED_ORGJSON_VERSION} is currently installed.\" buttons {\"Continue Build with org.json ${INSTALLED_ORGJSON_VERSION}\", \"Download org.json ${LATEST_ORGJSON_VERSION}\"} cancel button 1 default button 2 with title \"Newer org.json Available for QA Helper\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
+						echo '  OPENING DOWNLOAD NEWER ORG.JSON LINK'
+						open 'https://maven-badges.sml.io/maven-central/org.json/json'
+					fi
+				fi
+			else
+				echo -e '  FAILED TO GET LATEST ORG.JSON VERSION'
+				afplay /System/Library/Sounds/Basso.aiff
+			fi
+		else
+			echo '  NOT CHECKING ORG.JSON VERSION BECAUSE RETRIEVING LATEST FLATLAF VERSION FROM SAME SOURCE FAILED'
+		fi
+
+		echo -e '\nChecking for Apache Commons Text Libraries Update...'
+		# Suppress ShellCheck suggestions to use "find" instead of "ls" since we need "ls -t" to sort by modification date, and this path shouldn't contain non-alphanumeric characters.
+		# shellcheck disable=SC2012
+		INSTALLED_COMMONS_TEXT_VERSION="$(ls -t "${PROJECT_PATH}/libs/commons-text-"* | awk -F '-|[.]jar' '{ print $(NF-1); exit }')"
+		readonly INSTALLED_COMMONS_TEXT_VERSION
+		# shellcheck disable=SC2012
+		INSTALLED_COMMONS_LANG_VERSION="$(ls -t "${PROJECT_PATH}/libs/commons-lang3-"* | awk -F '-|[.]jar' '{ print $(NF-1); exit }')"
+		readonly INSTALLED_COMMONS_LANG_VERSION
+		echo "  Installed Apache Commons Text Libraries Versions: ${INSTALLED_COMMONS_TEXT_VERSION}, ${INSTALLED_COMMONS_LANG_VERSION}"
+
+		if [[ -n "${LATEST_FLATLAF_VERSION}" ]]; then
+			LATEST_COMMONS_TEXT_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/org.apache.commons/commons-text' | awk -F '/' '{ print $7; exit }')"
+			readonly LATEST_COMMONS_TEXT_VERSION
+			LATEST_COMMONS_LANG_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/org.apache.commons/commons-lang3' | awk -F '/' '{ print $7; exit }')"
+			readonly LATEST_COMMONS_LANG_VERSION
+
+			if [[ -n "${LATEST_COMMONS_TEXT_VERSION}" && -n "${LATEST_COMMONS_LANG_VERSION}" ]]; then
+				echo "     Latest Apache Commons Text Libraries Versions: ${LATEST_COMMONS_TEXT_VERSION}, ${LATEST_COMMONS_LANG_VERSION}"
+
+				if [[ "${LATEST_COMMONS_TEXT_VERSION}" != "${INSTALLED_COMMONS_TEXT_VERSION}" || "${LATEST_COMMONS_LANG_VERSION}" != "${INSTALLED_COMMONS_LANG_VERSION}" ]]; then
+					if osascript -e "display dialog \"Apache Commons Text Libraries versions ${LATEST_COMMONS_TEXT_VERSION}, ${LATEST_COMMONS_LANG_VERSION} are now available!
+
+Apache Commons Text Libraries versions ${INSTALLED_COMMONS_TEXT_VERSION}, ${INSTALLED_COMMONS_LANG_VERSION} are currently installed.\" buttons {\"Continue Build with Current Apache Commons Text Libraries\", \"Download Latest Apache Commons Text Libraries\"} cancel button 1 default button 2 with title \"Newer Apache Commons Text Libraries Available for QA Helper\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
+						echo '  OPENING DOWNLOAD NEWER APACHE COMMONS TEXT LIBS LINKS'
+
+						if [[ "${LATEST_COMMONS_TEXT_VERSION}" != "${INSTALLED_COMMONS_TEXT_VERSION}" ]]; then
+							open 'https://maven-badges.sml.io/maven-central/org.apache.commons/commons-text'
+						fi
+
+						if [[ "${LATEST_COMMONS_LANG_VERSION}" != "${INSTALLED_COMMONS_LANG_VERSION}" ]]; then
+							open 'https://maven-badges.sml.io/maven-central/org.apache.commons/commons-lang3'
+						fi
+					fi
+				fi
+			else
+				echo "  FAILED TO GET ALL LATEST APACHE COMMONS TEXT LIBS VERSIONS (${LATEST_COMMONS_TEXT_VERSION:-N/A}, ${LATEST_COMMONS_LANG_VERSION:-N/A})"
+				afplay /System/Library/Sounds/Basso.aiff
+			fi
+		else
+			echo '  NOT CHECKING ALL LATEST APACHE COMMONS TEXT LIBS VERSIONS BECAUSE RETRIEVING LATEST FLATLAF VERSION FROM SAME SOURCE FAILED'
 		fi
 
 		echo -e '\nChecking for SOAP Libraries Update...'
@@ -135,48 +203,49 @@ FlatLaf version ${INSTALLED_FLATLAF_VERSION} is currently installed.\" buttons {
 		readonly INSTALLED_SOAP_LIB_STX_EX_VERSION
 		echo "  Installed SOAP Libraries Versions: ${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}, ${INSTALLED_SOAP_LIB_JAK_XML_VERSION}, ${INSTALLED_SOAP_LIB_SAJ_IMP_VERSION}, ${INSTALLED_SOAP_LIB_STX_EX_VERSION}"
 
-		LATEST_SOAP_LIB_JAK_ACT_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.herokuapp.com/maven-central/com.sun.activation/jakarta.activation' | awk -F '/' '{ print $7; exit }')"
-		readonly LATEST_SOAP_LIB_JAK_ACT_VERSION
-		LATEST_SOAP_LIB_JAK_XML_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.herokuapp.com/maven-central/jakarta.xml.soap/jakarta.xml.soap-api' | awk -F '/' '{ print $7; exit }')"
-		readonly LATEST_SOAP_LIB_JAK_XML_VERSION
-		LATEST_SOAP_LIB_SAJ_IMP_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.herokuapp.com/maven-central/com.sun.xml.messaging.saaj/saaj-impl' | awk -F '/' '{ print $7; exit }')"
-		readonly LATEST_SOAP_LIB_SAJ_IMP_VERSION
-		LATEST_SOAP_LIB_STX_EX_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.herokuapp.com/maven-central/org.jvnet.staxex/stax-ex' | awk -F '/' '{ print $7; exit }')"
-		readonly LATEST_SOAP_LIB_STX_EX_VERSION
-		
+		if [[ -n "${LATEST_FLATLAF_VERSION}" ]]; then
+			LATEST_SOAP_LIB_JAK_ACT_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/com.sun.activation/jakarta.activation' | awk -F '/' '{ print $7; exit }')"
+			readonly LATEST_SOAP_LIB_JAK_ACT_VERSION
+			LATEST_SOAP_LIB_JAK_XML_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/jakarta.xml.soap/jakarta.xml.soap-api' | awk -F '/' '{ print $7; exit }')"
+			readonly LATEST_SOAP_LIB_JAK_XML_VERSION
+			LATEST_SOAP_LIB_SAJ_IMP_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/com.sun.xml.messaging.saaj/saaj-impl' | awk -F '/' '{ print $7; exit }')"
+			readonly LATEST_SOAP_LIB_SAJ_IMP_VERSION
+			LATEST_SOAP_LIB_STX_EX_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/org.jvnet.staxex/stax-ex' | awk -F '/' '{ print $7; exit }')"
+			readonly LATEST_SOAP_LIB_STX_EX_VERSION
 
-		if [[ -n "${LATEST_SOAP_LIB_JAK_ACT_VERSION}" && -n "${LATEST_SOAP_LIB_JAK_XML_VERSION}" && -n "${LATEST_SOAP_LIB_SAJ_IMP_VERSION}" && -n "${LATEST_SOAP_LIB_STX_EX_VERSION}" ]]; then
-			echo "     Latest SOAP Libraries Versions: ${LATEST_SOAP_LIB_JAK_ACT_VERSION}, ${LATEST_SOAP_LIB_JAK_XML_VERSION}, ${LATEST_SOAP_LIB_SAJ_IMP_VERSION}, ${LATEST_SOAP_LIB_STX_EX_VERSION}"
+			if [[ -n "${LATEST_SOAP_LIB_JAK_ACT_VERSION}" && -n "${LATEST_SOAP_LIB_JAK_XML_VERSION}" && -n "${LATEST_SOAP_LIB_SAJ_IMP_VERSION}" && -n "${LATEST_SOAP_LIB_STX_EX_VERSION}" ]]; then
+				echo "     Latest SOAP Libraries Versions: ${LATEST_SOAP_LIB_JAK_ACT_VERSION}, ${LATEST_SOAP_LIB_JAK_XML_VERSION}, ${LATEST_SOAP_LIB_SAJ_IMP_VERSION}, ${LATEST_SOAP_LIB_STX_EX_VERSION}"
 
-			if [[ "${LATEST_SOAP_LIB_JAK_ACT_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}" || "${LATEST_SOAP_LIB_JAK_XML_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_XML_VERSION}" ||
-				"${LATEST_SOAP_LIB_SAJ_IMP_VERSION}" != "${INSTALLED_SOAP_LIB_SAJ_IMP_VERSION}" || "${LATEST_SOAP_LIB_STX_EX_VERSION}" != "${INSTALLED_SOAP_LIB_STX_EX_VERSION}" ]]; then
-				if osascript -e "display dialog \"SOAP Libraries versions ${LATEST_SOAP_LIB_JAK_ACT_VERSION}, ${LATEST_SOAP_LIB_JAK_XML_VERSION}, ${LATEST_SOAP_LIB_SAJ_IMP_VERSION}, ${LATEST_SOAP_LIB_STX_EX_VERSION} are now available!
+				if [[ "${LATEST_SOAP_LIB_JAK_ACT_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}" || "${LATEST_SOAP_LIB_JAK_XML_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_XML_VERSION}" ||
+					"${LATEST_SOAP_LIB_SAJ_IMP_VERSION}" != "${INSTALLED_SOAP_LIB_SAJ_IMP_VERSION}" || "${LATEST_SOAP_LIB_STX_EX_VERSION}" != "${INSTALLED_SOAP_LIB_STX_EX_VERSION}" ]]; then
+					if osascript -e "display dialog \"SOAP Libraries versions ${LATEST_SOAP_LIB_JAK_ACT_VERSION}, ${LATEST_SOAP_LIB_JAK_XML_VERSION}, ${LATEST_SOAP_LIB_SAJ_IMP_VERSION}, ${LATEST_SOAP_LIB_STX_EX_VERSION} are now available!
 
-SOAP Libraries versions ${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}, ${INSTALLED_SOAP_LIB_JAK_XML_VERSION}, ${INSTALLED_SOAP_LIB_SAJ_IMP_VERSION}, ${INSTALLED_SOAP_LIB_STX_EX_VERSION} are currently installed.\" buttons {\"Continue Build with Current SOAPLibraries\", \"Download Latest SOAP Libraries\"} cancel button 1 default button 2 with title \"Newer SOAP Libraries Available for QA Helper\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
-					echo '  CANCELING BUILD TO DOWNLOAD NEWER SOAP LIBS'
+SOAP Libraries versions ${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}, ${INSTALLED_SOAP_LIB_JAK_XML_VERSION}, ${INSTALLED_SOAP_LIB_SAJ_IMP_VERSION}, ${INSTALLED_SOAP_LIB_STX_EX_VERSION} are currently installed.\" buttons {\"Continue Build with Current SOAP Libraries\", \"Download Latest SOAP Libraries\"} cancel button 1 default button 2 with title \"Newer SOAP Libraries Available for QA Helper\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
+						echo '  OPENING DOWNLOAD NEWER SOAP LIBS LINKS'
 
-					if [[ "${LATEST_SOAP_LIB_JAK_ACT_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}" ]]; then
-						open 'https://maven-badges.herokuapp.com/maven-central/com.sun.activation/jakarta.activation'
+						if [[ "${LATEST_SOAP_LIB_JAK_ACT_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}" ]]; then
+							open 'https://maven-badges.sml.io/maven-central/com.sun.activation/jakarta.activation'
+						fi
+
+						if [[ "${LATEST_SOAP_LIB_JAK_XML_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_XML_VERSION}" ]]; then
+							open 'https://maven-badges.sml.io/maven-central/jakarta.xml.soap/jakarta.xml.soap-api'
+						fi
+
+						if [[ "${LATEST_SOAP_LIB_SAJ_IMP_VERSION}" != "${INSTALLED_SOAP_LIB_SAJ_IMP_VERSION}" ]]; then
+							open 'https://maven-badges.sml.io/maven-central/com.sun.xml.messaging.saaj/saaj-impl'
+						fi
+
+						if [[ "${LATEST_SOAP_LIB_STX_EX_VERSION}" != "${INSTALLED_SOAP_LIB_STX_EX_VERSION}" ]]; then
+							open 'https://maven-badges.sml.io/maven-central/org.jvnet.staxex/stax-ex'
+						fi
 					fi
-
-					if [[ "${LATEST_SOAP_LIB_JAK_XML_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_XML_VERSION}" ]]; then
-						open 'https://maven-badges.herokuapp.com/maven-central/jakarta.xml.soap/jakarta.xml.soap-api'
-					fi
-
-					if [[ "${LATEST_SOAP_LIB_SAJ_IMP_VERSION}" != "${INSTALLED_SOAP_LIB_SAJ_IMP_VERSION}" ]]; then
-						open 'https://maven-badges.herokuapp.com/maven-central/com.sun.xml.messaging.saaj/saaj-impl'
-					fi
-
-					if [[ "${LATEST_SOAP_LIB_STX_EX_VERSION}" != "${INSTALLED_SOAP_LIB_STX_EX_VERSION}" ]]; then
-						open 'https://maven-badges.herokuapp.com/maven-central/org.jvnet.staxex/stax-ex'
-					fi
-
-					exit 1
 				fi
+			else
+				echo "  FAILED TO GET ALL LATEST SOAP LIBS VERSIONS (${LATEST_SOAP_LIB_JAK_ACT_VERSION:-N/A}, ${LATEST_SOAP_LIB_JAK_XML_VERSION:-N/A}, ${LATEST_SOAP_LIB_SAJ_IMP_VERSION:-N/A}, ${LATEST_SOAP_LIB_STX_EX_VERSION:-N/A})"
+				afplay /System/Library/Sounds/Basso.aiff
 			fi
 		else
-			echo -e "  FAILED TO GET ALL LATEST SOAP LIBS VERSIONS (${LATEST_SOAP_LIB_JAK_ACT_VERSION:-N/A}, ${LATEST_SOAP_LIB_JAK_XML_VERSION:-N/A}, ${LATEST_SOAP_LIB_SAJ_IMP_VERSION:-N/A}, ${LATEST_SOAP_LIB_STX_EX_VERSION:-N/A})\n"
-			afplay /System/Library/Sounds/Basso.aiff
+			echo '  NOT CHECKING ALL LATEST SOAP LIBS VERSIONS BECAUSE RETRIEVING LATEST FLATLAF VERSION FROM SAME SOURCE FAILED'
 		fi
 
 
@@ -201,16 +270,41 @@ SOAP Libraries versions ${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}, ${INSTALLED_SOAP_
 				if osascript -e "display dialog \"HDSentinel for Linux version ${LATEST_HDSENTINEL_LINUX_VERSION} is now available!
 
 HDSentinel for Linux version ${INCLUDED_HDSENTINEL_LINUX_VERSION} is currently included.\" buttons {\"Continue Build with HDSentinel ${INCLUDED_HDSENTINEL_LINUX_VERSION}\", \"Download HDSentinel ${LATEST_HDSENTINEL_LINUX_VERSION}\"} cancel button 1 default button 2 with title \"Newer HDSentinel Available\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
-					echo '  CANCELING BUILD TO DOWNLOAD NEWER HDSENTINEL'
+					echo '  OPENING DOWNLOAD NEWER HDSENTINEL LINK'
 					open 'https://www.hdsentinel.com/hard_disk_sentinel_linux.php'
-					exit 1
 				fi
 			fi
 		else
-			echo -e '  FAILED TO GET LATEST HDSENTINEL VERSION\n'
+			echo -e '  FAILED TO GET LATEST HDSENTINEL VERSION'
 			afplay /System/Library/Sounds/Basso.aiff
 		fi
 	fi
+
+
+	# echo -e '\nDownloading Latest "emojis.json" for "emoji-json" from "Gemoji"...'
+	# rm -rf "${TMPDIR}/QA_Helper-emoji-java-JAR"
+	# mkdir -p "${TMPDIR}/QA_Helper-emoji-java-JAR"
+	# (cd "${TMPDIR}/QA_Helper-emoji-java-JAR" && jar -xf "${PROJECT_PATH}/libs/emoji-java-5.1.1.jar")
+
+	# declare -i PREVIOUS_EMOJIS_JSON_LINE_COUNT
+	# PREVIOUS_EMOJIS_JSON_LINE_COUNT="$({ wc -l "${TMPDIR}/QA_Helper-emoji-java-JAR/emojis.json" 2> /dev/null || echo '0'; } | awk '{ print $1; exit }')"
+	# readonly PREVIOUS_EMOJIS_JSON_LINE_COUNT
+
+	# curl -m 5 -sfL 'https://raw.githubusercontent.com/github/gemoji/master/db/emoji.json' -o "${TMPDIR}/QA_Helper-emoji-java-JAR/emojis.json"
+
+	# declare -i NEW_EMOJIS_JSON_LINE_COUNT
+	# NEW_EMOJIS_JSON_LINE_COUNT="$({ wc -l "${TMPDIR}/QA_Helper-emoji-java-JAR/emojis.json" 2> /dev/null || echo '0'; } | awk '{ print $1; exit }')"
+	# readonly NEW_EMOJIS_JSON_LINE_COUNT
+
+	# if (( NEW_EMOJIS_JSON_LINE_COUNT >= PREVIOUS_EMOJIS_JSON_LINE_COUNT )); then
+	# 	(cd "${TMPDIR}/QA_Helper-emoji-java-JAR" && jar -cf "${PROJECT_PATH}/libs/emoji-java-5.1.1.jar" .)
+	# 	echo '  Updated "emojis.json" within "[PROJECT FOLDER]/libs/emoji-java-5.1.1.jar"'
+	# else
+	# 	echo "  NEW emojis.json LINE COUNT NOT GREATER THAN OR EQUAL TO PREVIOUS (${NEW_EMOJIS_JSON_LINE_COUNT} < ${PREVIOUS_EMOJIS_JSON_LINE_COUNT})"
+	# 	afplay '/System/Library/Sounds/Basso.aiff'
+	# fi
+	# rm -rf "${TMPDIR}/QA_Helper-emoji-java-JAR"
+
 
 	echo -e '\nDownloading Latest PCI IDs...'
 	declare -i PREVIOUS_PCI_IDS_LINE_COUNT
@@ -257,8 +351,17 @@ HDSentinel for Linux version ${INCLUDED_HDSENTINEL_LINUX_VERSION} is currently i
 		echo "  NEW usb.is LINE COUNT NOT GREATER THAN OR EQUAL TO PREVIOUS (${NEW_USB_IDS_LINE_COUNT} < ${PREVIOUS_USB_IDS_LINE_COUNT})"
 		afplay '/System/Library/Sounds/Basso.aiff'
 	fi
-
-	echo -e '\nDone Checking for Updates\n\n'
 else
-	echo -e '\nSkipping Checking for Updates when Building Testing Version\n\n'
+	echo -e '\nSkipping Online Update Checks when Building Testing Version'
 fi
+
+echo -e '\nCopying Latest Keyboard_Test.jar...'
+keyboard_test_jar_path="${PROJECT_PATH}/../../Keyboard Test/dist/Keyboard_Test.jar"
+if [[ -f "${keyboard_test_jar_path}" ]]; then
+	cp -f "${keyboard_test_jar_path}" "${PROJECT_PATH}/src/Resources/Keyboard_Test.jar"
+	echo "  Copied Keyboard_Test.jar $(unzip -p "${PROJECT_PATH}/src/Resources/Keyboard_Test.jar" '*/keyboard-test-version.txt' | head -1) into '[PROJECT FOLDER]/src/Resources/Keyboard_Test.jar'"
+else
+	echo "  DID NOT FIND Latest Keyboard_Test.jar"
+fi
+
+echo -e '\nDone Checking for Updates\n\n'

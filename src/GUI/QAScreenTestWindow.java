@@ -20,10 +20,13 @@ package GUI;
 import Utilities.*;
 import java.awt.Color;
 import java.awt.Cursor;
+import java.awt.GraphicsConfiguration;
 import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.Toolkit;
+import java.awt.event.ActionEvent;
 import java.awt.image.BufferedImage;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
@@ -42,23 +45,40 @@ public class QAScreenTestWindow extends javax.swing.JFrame {
     /**
      * Creates new form QAScreenTestWindow
      *
+     * @param qaHelperWindow
      * @param shouldDisableTimeLimit
      */
-    public QAScreenTestWindow(boolean shouldDisableTimeLimit) {
+    public QAScreenTestWindow(JFrame qaHelperWindow, boolean shouldDisableTimeLimit) {
         initComponents();
-        finishSetup();
+        finishSetup(qaHelperWindow);
 
         disableTimeLimit = shouldDisableTimeLimit;
     }
 
-    private void finishSetup() {
+    private void finishSetup(JFrame qaHelperWindow) {
         getContentPane().setBackground(Color.RED);
         getRootPane().setDefaultButton(btnChangeColor);
 
-        GraphicsDevice defaultScreenDevice = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
+        GraphicsDevice screenForWindow = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
 
-        if (defaultScreenDevice.isFullScreenSupported()) {
-            defaultScreenDevice.setFullScreenWindow(this);
+        Rectangle qaHelperWindowBounds = qaHelperWindow.getBounds();
+        GraphicsDevice[] screenDevices = GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices();
+        int lastWindowIntersectionArea = 0;
+        for (GraphicsDevice thisScreenDevice : screenDevices) { // Find screen that window is on, based on: https://stackoverflow.com/a/33799118
+            GraphicsConfiguration[] thisScreenConfigurations = thisScreenDevice.getConfigurations();
+            for (GraphicsConfiguration thisScreenConfiguration : thisScreenConfigurations) {
+                Rectangle windowScreenIntersection = qaHelperWindowBounds.intersection(thisScreenConfiguration.getBounds());
+                int windowScreenIntersectionArea = windowScreenIntersection.width * windowScreenIntersection.height;
+
+                if ((windowScreenIntersectionArea > 0) && (windowScreenIntersectionArea > lastWindowIntersectionArea)) {
+                    lastWindowIntersectionArea = windowScreenIntersectionArea;
+                    screenForWindow = thisScreenDevice;
+                }
+            }
+        }
+
+        if (screenForWindow.isFullScreenSupported()) {
+            screenForWindow.setFullScreenWindow(this);
         } else {
             setExtendedState(JFrame.MAXIMIZED_BOTH);
         }
@@ -132,7 +152,9 @@ public class QAScreenTestWindow extends javax.swing.JFrame {
     }// </editor-fold>//GEN-END:initComponents
 
     private void btnChangeColorActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnChangeColorActionPerformed
-        if (disableTimeLimit || new Date().getTime() - lastChange >= 1000) {
+        if ((evt.getModifiers() & ActionEvent.SHIFT_MASK) == ActionEvent.SHIFT_MASK) {
+            btnChangeColor.setText(btnChangeColor.getText().isEmpty() ? "<html><b style='font-size: larger; color: " + ((clickCount == 1 || clickCount == 4) ? "black" : "white") + "'><i>Changing colors is disabled while Shift key is held down.</i></b></html>" : "");
+        } else if (disableTimeLimit || new Date().getTime() - lastChange >= 1000) {
             // Force people to stay on each color for at least 1 second
             btnChangeColor.setText("");
 

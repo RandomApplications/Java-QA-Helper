@@ -20,7 +20,6 @@ package Utilities;
 import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
@@ -37,13 +36,11 @@ public class LinuxAutoScripts {
     public LinuxAutoScripts(String scriptType, String adminPassword) {
         if (System.getProperty("os.name").startsWith("Linux")) {
             try {
-                String adminPasswordQuotedForShell = "'" + adminPassword.replace("'", "'\\''") + "'";
-
                 boolean isLinuxUbiquityMode = false;
 
                 if (new File("/proc/cmdline").exists()) {
                     try {
-                        List<String> linuxBootArguments = Arrays.asList(String.join(" ", Files.readAllLines(Paths.get("/proc/cmdline"), StandardCharsets.UTF_8)).split(" "));
+                        List<String> linuxBootArguments = Arrays.asList(String.join(" ", Files.readAllLines(Paths.get("/proc/cmdline"))).split(" "));
                         isLinuxUbiquityMode = (linuxBootArguments.contains("automatic-ubiquity") || linuxBootArguments.contains("only-ubiquity"));
                     } catch (IOException getLinuxBootArgsException) {
                         System.out.println("getLinuxBootArgsException: " + getLinuxBootArgsException);
@@ -52,10 +49,7 @@ public class LinuxAutoScripts {
 
                 if (!isLinuxUbiquityMode) {
                     String launchPath = new File(LinuxAutoScripts.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getPath();
-
                     if (launchPath.endsWith(".jar")) {
-                        String possibleSudo = (!adminPassword.equals("*UNKNOWN*") ? "printf '%s\\n' " + adminPasswordQuotedForShell + " | /usr/bin/sudo -Sk " : "");
-
                         String launchDirectory = launchPath.substring(0, launchPath.lastIndexOf("/"));
                         String defaultDirectory = System.getProperty("user.home") + "/.local/qa-helper";
 
@@ -64,11 +58,13 @@ public class LinuxAutoScripts {
                             autoScriptsDirectory = defaultDirectory + "/auto-scripts/";
                         }
 
-                        String autoScriptsToRun = "";
+                        boolean isPeripheralTestMode = new File(launchDirectory + "/flags/peripheral-test-mode.flag").exists() || new File(defaultDirectory + "/flags/peripheral-test-mode.flag").exists();
 
-                        String scriptTypeKey = scriptType.toLowerCase().replace(" ", "-").replace("/", "-");
+                        if (!isPeripheralTestMode && new File(autoScriptsDirectory).exists()) {
+                            String adminPasswordQuotedForShell = "'" + adminPassword.replace("'", "'\\''") + "'";
+                            String possibleSudo = (!adminPassword.equals("*UNKNOWN*") ? "printf '%s\\n' " + adminPasswordQuotedForShell + " | /usr/bin/sudo -Sk " : "");
 
-                        if (new File(autoScriptsDirectory).exists()) {
+                            String scriptTypeKey = scriptType.toLowerCase().replace(" ", "-").replace("/", "-");
                             String onceAutoScriptPrefix = scriptTypeKey + "+once";
 
                             String userOnceAutoScript = autoScriptsDirectory + onceAutoScriptPrefix + "+user.sh";
@@ -77,6 +73,8 @@ public class LinuxAutoScripts {
                             String flagsDirectory = defaultDirectory + "/flags/";
                             String thisOnceAutoScriptsFlag = flagsDirectory + "auto-scripts+did-run=" + onceAutoScriptPrefix + ".flag";
                             String touchDidRunOnceAutoScriptFlag = "";
+
+                            String autoScriptsToRun = "";
 
                             if ((new File(userOnceAutoScript).exists() || new File(rootOnceAutoScript).exists()) && !new File(thisOnceAutoScriptsFlag).exists()) {
                                 new File(flagsDirectory).mkdirs();

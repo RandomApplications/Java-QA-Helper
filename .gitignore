@@ -2,12 +2,13 @@
 .DS_Store
 
 # Ignore file types in any location:
-*.mf
 *.zip
 *.icns
 *.ico
 *.svg
+*.car
 *.ids
+*.jar
 
 # Ignore if name starts with in any location:
 OLD-*
@@ -17,7 +18,7 @@ hdsentinel-*
 build/
 dist/
 libs/
-nbproject/
+private/
 test/
 Universal Binary Parts/
 Licenses/

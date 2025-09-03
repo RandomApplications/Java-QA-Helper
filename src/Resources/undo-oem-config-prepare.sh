@@ -21,60 +21,40 @@
 #
 
 
-while true; do
-    clear
+read -rp '
+Are you sure you want undo "oem-config-prepare" / "Prepare for Shipping to End User" so that this computer can boot back into the "OEM" user account?
 
-    read -rp '
-Are you sure you want undo "oem-config-prepare" so that this system can boot back into the "OEM" user account?
+This computer will be reboot after the process has completed successfully.
 
-If you choose to proceed, you will be prompted to enter this computers admin password.
+Press ENTER to continue, or type CONTROL+C to cancel.
 
-This computer will be shut down after the process has completed successfully.
-
-To proceed, type "yes" and press RETURN. To cancel, type anything else and press RETURN: ' confirm_return_value
-    
-    if [[ -n "${confirm_return_value}" ]]; then
-        confirm_return_value="${confirm_return_value,,}"
-        break
-    fi
-done
-
-if [[ "${confirm_return_value}" == 'yes' ]]; then
-    clear
-
-    echo '
-UNDOING OEM-CONFIG-PREPARE
 '
 
-    # Undo everything done in the oem-config-prepare source: https://github.com/linuxmint/ubiquity/blob/master/bin/oem-config-prepare
-    sudo systemctl disable oem-config.service
-    sudo systemctl disable oem-config.target
-    sudo systemctl set-default graphical.target
+echo -e 'UNDOING OEM-CONFIG-PREPARE...\n'
 
-    sudo rm -rf '/lib/systemd/system/oem-config.service' '/lib/systemd/system/oem-config.target'
+echo 'freegeek' | sudo -vS # Run "sudo -v" with no command to pre-cache the authorization for subsequent commands requiring "sudo" with the standard "freegeek" password. If there is a different password it will be prompted.
 
-    sudo apt purge -y oem-config-gtk # Do not autoremove, we just want to purge so that the next command will recreate the oem-config-prepare-gtk.desktop file in the start menu.
-    sudo apt install --no-install-recommends -y oem-config-gtk # The internet is not required for this re-install.
+# Undo everything done in the oem-config-prepare source: https://github.com/linuxmint/ubiquity/blob/master/bin/oem-config-prepare
+sudo systemctl set-default graphical.target || exit 1
+sudo systemctl disable oem-config.target || exit 1
+sudo systemctl disable oem-config.service || exit 1
 
-    # Add line to QA Helper log that "oem-config-prepare" was undone.
-    if [[ ! -d '/usr/local/share/build-info' ]]; then
-        mkdir '/usr/local/share/build-info' # This folder (and the "qa-helper-log.txt" file) may or may not already exist depending on whether or not anything else was previously verified in QA Helper.
-    fi
-    echo "Undo: oem-config-prepare - $(date '+%m/%d/%Y %T')" >> '/usr/local/share/build-info/qa-helper-log.txt'
+sudo rm -rf '/lib/systemd/system/oem-config.target' '/lib/systemd/system/oem-config.service' || exit 1
 
-    echo '
-FINSIHED UNDOING OEM-CONFIG-PREPARE
+echo 'autologin-user=oem' | sudo tee -a '/etc/lightdm/lightdm.conf' > /dev/null # Re-enable auto-login.
 
-THIS COMPUTER WILL NOW SHUT DOWN
-'
-
-    sleep 2
-
-    shutdown now
-else
-    clear
-
-    echo '
-CANCELED UNDO-OEM-CONFIG-PREPARE : You did not type "yes" so "oem-config-prepare" will not be undone.
-'
+# Add line to QA Helper log that "oem-config-prepare" was undone.
+if [[ ! -d '/usr/local/share/build-info' ]]; then
+	mkdir '/usr/local/share/build-info' # This folder (and the "qa-helper-log.txt" file) may or may not already exist depending on whether or not anything else was previously verified in QA Helper.
 fi
+echo "Undo: oem-config-prepare - $(date '+%m/%d/%Y %T')" >> '/usr/local/share/build-info/qa-helper-log.txt'
+
+echo '
+FINISHED UNDOING OEM-CONFIG-PREPARE
+
+THIS COMPUTER WILL NOW REBOOT
+'
+
+sleep 2
+
+systemctl reboot

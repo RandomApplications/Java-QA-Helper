@@ -60,7 +60,7 @@ public final class QAMouseTestWindow extends javax.swing.JDialog {
             pack(); // Need to re-pack after hiding Mouse Properties so windows and scroll area isn't too tall.
         }
         
-        setMinimumSize(UIScale.scale(getMinimumSize())); // Scale window minimum size by userScalingFactor for correct minimum size with HiDPI on Linux.
+        setMinimumSize(UIScale.scale(getMinimumSize())); // Scale window minimum size by userScaleFactor for correct minimum size with HiDPI on Linux.
         
         lblMouseIcon.setPreferredSize(null); // Undo preferred size so that the icon is displayed properly with HiDPI on Linux. (But keep preferred size in GUI builder so the design looks right).
 

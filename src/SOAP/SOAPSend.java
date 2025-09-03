@@ -23,6 +23,7 @@ import jakarta.xml.soap.*;
 import javax.xml.transform.*;
 import javax.xml.transform.stream.*;
 import Utilities.PrivateStrings;
+import java.util.concurrent.TimeUnit;
 
 /**
  * This class prepares, sends and receives SOAP files.
@@ -30,10 +31,10 @@ import Utilities.PrivateStrings;
  * @author Stefani Monson (of PCs for People) & Pico Mitchell (of Free Geek)
  */
 // REQUIRED LIBRARIES:
-//  jakarta.activation: https://maven-badges.herokuapp.com/maven-central/com.sun.activation/jakarta.activation
-//  jakarta.xml.soap-api: https://maven-badges.herokuapp.com/maven-central/jakarta.xml.soap/jakarta.xml.soap-api
-//  saaj-impl: https://maven-badges.herokuapp.com/maven-central/com.sun.xml.messaging.saaj/saaj-impl
-//  stax-ex: https://maven-badges.herokuapp.com/maven-central/org.jvnet.staxex/stax-ex
+//  jakarta.activation: https://maven-badges.sml.io/maven-central/com.sun.activation/jakarta.activation
+//  jakarta.xml.soap-api: https://maven-badges.sml.io/maven-central/jakarta.xml.soap/jakarta.xml.soap-api
+//  saaj-impl: https://maven-badges.sml.io/maven-central/com.sun.xml.messaging.saaj/saaj-impl
+//  stax-ex: https://maven-badges.sml.io/maven-central/org.jvnet.staxex/stax-ex
 public class SOAPSend {
 
     private SOAPConnectionFactory soapConnectionFactory;
@@ -47,7 +48,7 @@ public class SOAPSend {
     private PrivateStrings privateStrings = new PrivateStrings();
     private String serviceURL = privateStrings.getPCsCRMServiceURL();
     private String serverURI = privateStrings.getPCsCRMServerURI();
-    private MimeHeaders mimeheaders;
+    private MimeHeaders mimeHeaders;
 
     public SOAPSend(boolean testMode) {
         if (testMode) {
@@ -74,28 +75,51 @@ public class SOAPSend {
     }
 
     public String buildAndSendSOAP(String endpoint, String keys[], String values[]) {
-        try {
-            soapBodyElem = soapBody.addChildElement(endpoint, "", serverURI);
+        //System.out.println("SOAPSend buildAndSendSOAP: " + endpoint); // DEBUG
 
-            for (int i = 0; i < keys.length; i++) {
-                SOAPElement thisSoapElement = soapBodyElem.addChildElement(keys[i]);
-                thisSoapElement.addTextNode(values[i]);
+        int maxSoapAttempts = 4;
+        for (int soapAttemptCount = 1; soapAttemptCount <= maxSoapAttempts; soapAttemptCount++) {
+            // After adding "sendErrorEmail" functionality, it seems that sporadic SOAP failures are one of the most common issues.
+            // To help workaround this issue, try to send SOAP commands up to "maxSoapAttempts" times if there is an exception
+            // (waiting a moment between attempts), and only return an error if the final attempt fails.
+
+            try {
+                soapBodyElem = soapBody.addChildElement(endpoint, "", serverURI);
+
+                for (int i = 0; i < keys.length; i++) {
+                    SOAPElement thisSoapElement = soapBodyElem.addChildElement(keys[i]);
+                    thisSoapElement.addTextNode(values[i]);
+                }
+
+                mimeHeaders = soapMessage.getMimeHeaders();
+                mimeHeaders.addHeader("SOAPAction", serverURI + endpoint);
+                soapMessage.saveChanges();
+
+                String soapResponse = parseSoapResponse(soapConnection.call(soapMessage, serviceURL));
+
+                soapConnection.close();
+
+                if (!soapResponse.startsWith("<?xml")) {
+                    throw new Exception("SOAP RESPONSE NOT XML: " + soapResponse);
+                }
+
+                return soapResponse;
+            } catch (Exception soapBuildAndSendException) {
+                System.out.println("soapBuildAndSendException (ATTEMPT " + soapAttemptCount + " OF " + maxSoapAttempts + "): " + soapBuildAndSendException);
+
+                if (soapAttemptCount < maxSoapAttempts) {
+                    try {
+                        TimeUnit.SECONDS.sleep(soapAttemptCount);
+                    } catch (InterruptedException sleepException) {
+                        // Ignore sleepException
+                    }
+                } else {
+                    return soapBuildAndSendException.toString();
+                }
             }
-
-            mimeheaders = soapMessage.getMimeHeaders();
-            mimeheaders.addHeader("SOAPAction", serverURI + endpoint);
-            soapMessage.saveChanges();
-
-            String soapResponse = parseSoapResponse(soapConnection.call(soapMessage, serviceURL));
-
-            soapConnection.close();
-
-            return soapResponse;
-        } catch (SOAPException soapBuildAndSendException) {
-            System.out.println("soapBuildAndSendException: " + soapBuildAndSendException);
-
-            return soapBuildAndSendException.toString();
         }
+
+        return "UNKNOWN buildAndSendSOAP ERROR";
     }
 
     public String parseSoapResponse(SOAPMessage soapResponse) {

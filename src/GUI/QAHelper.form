@@ -42,7 +42,7 @@
             <MenuItem class="javax.swing.JMenuItem" name="menResetTextSize">
               <Properties>
                 <Property name="accelerator" type="javax.swing.KeyStroke" editor="org.netbeans.modules.form.editors.KeyStrokeEditor">
-                  <KeyStroke key="Alt+LEFT"/>
+                  <KeyStroke key="Ctrl+0"/>
                 </Property>
                 <Property name="icon" type="javax.swing.Icon" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
                   <Connection code="new TwemojiImage(&quot;LeftArrow&quot;, qaHelperWindow).toImageIcon(16)" type="code"/>
@@ -56,7 +56,7 @@
             <MenuItem class="javax.swing.JMenuItem" name="menIncreaseTextSize">
               <Properties>
                 <Property name="accelerator" type="javax.swing.KeyStroke" editor="org.netbeans.modules.form.editors.KeyStrokeEditor">
-                  <KeyStroke key="Alt+UP"/>
+                  <KeyStroke key="Ctrl+EQUALS"/>
                 </Property>
                 <Property name="icon" type="javax.swing.Icon" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
                   <Connection code="new TwemojiImage(&quot;UpArrow&quot;, qaHelperWindow).toImageIcon(16)" type="code"/>
@@ -70,7 +70,7 @@
             <MenuItem class="javax.swing.JMenuItem" name="menDecreaseTextSize">
               <Properties>
                 <Property name="accelerator" type="javax.swing.KeyStroke" editor="org.netbeans.modules.form.editors.KeyStrokeEditor">
-                  <KeyStroke key="Alt+DOWN"/>
+                  <KeyStroke key="Ctrl+MINUS"/>
                 </Property>
                 <Property name="icon" type="javax.swing.Icon" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
                   <Connection code="new TwemojiImage(&quot;DownArrow&quot;, qaHelperWindow).toImageIcon(16)" type="code"/>
@@ -84,7 +84,7 @@
             <MenuItem class="javax.swing.JMenuItem" name="menMaxTextSizeForScreen">
               <Properties>
                 <Property name="accelerator" type="javax.swing.KeyStroke" editor="org.netbeans.modules.form.editors.KeyStrokeEditor">
-                  <KeyStroke key="Alt+RIGHT"/>
+                  <KeyStroke key="Shift+Ctrl+EQUALS"/>
                 </Property>
                 <Property name="icon" type="javax.swing.Icon" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
                   <Connection code="new TwemojiImage(&quot;UpDownArrow&quot;, qaHelperWindow).toImageIcon(16)" type="code"/>
@@ -93,6 +93,62 @@
               </Properties>
               <Events>
                 <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menMaxTextSizeForScreenActionPerformed"/>
+              </Events>
+            </MenuItem>
+          </SubComponents>
+        </Menu>
+        <Menu class="javax.swing.JMenu" name="deviceTypeMenu">
+          <Properties>
+            <Property name="text" type="java.lang.String" value="Device Type"/>
+          </Properties>
+          <SubComponents>
+            <MenuItem class="javax.swing.JRadioButtonMenuItem" name="menDeviceTypeLaptop">
+              <Properties>
+                <Property name="text" type="java.lang.String" value="Laptop"/>
+              </Properties>
+              <Events>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menDeviceTypeLaptopActionPerformed"/>
+              </Events>
+            </MenuItem>
+            <MenuItem class="javax.swing.JRadioButtonMenuItem" name="menDeviceTypeDesktop">
+              <Properties>
+                <Property name="text" type="java.lang.String" value="Desktop"/>
+              </Properties>
+              <Events>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menDeviceTypeDesktopActionPerformed"/>
+              </Events>
+            </MenuItem>
+            <MenuItem class="javax.swing.JRadioButtonMenuItem" name="menDeviceTypeAllInOne">
+              <Properties>
+                <Property name="text" type="java.lang.String" value="All-in-One"/>
+              </Properties>
+              <Events>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menDeviceTypeAllInOneActionPerformed"/>
+              </Events>
+            </MenuItem>
+            <MenuItem class="javax.swing.JPopupMenu$Separator" name="deviceTypeSeparator">
+            </MenuItem>
+            <MenuItem class="javax.swing.JRadioButtonMenuItem" name="menDeviceTypeMotherboard">
+              <Properties>
+                <Property name="text" type="java.lang.String" value="Motherboard"/>
+              </Properties>
+              <Events>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menDeviceTypeMotherboardActionPerformed"/>
+              </Events>
+            </MenuItem>
+          </SubComponents>
+        </Menu>
+        <Menu class="javax.swing.JMenu" name="testsMenu">
+          <Properties>
+            <Property name="text" type="java.lang.String" value="Tests"/>
+          </Properties>
+          <SubComponents>
+            <MenuItem class="javax.swing.JCheckBoxMenuItem" name="menForceShowAllTests">
+              <Properties>
+                <Property name="text" type="java.lang.String" value="Force Show All Tests"/>
+              </Properties>
+              <Events>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menForceShowAllTestsActionPerformed"/>
               </Events>
             </MenuItem>
           </SubComponents>
@@ -126,6 +182,28 @@
                 <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menReopenRepairActionPerformed"/>
               </Events>
             </MenuItem>
+            <MenuItem class="javax.swing.JMenuItem" name="menSetProductType">
+              <Properties>
+                <Property name="icon" type="javax.swing.Icon" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
+                  <Connection code="new TwemojiImage(&quot;Laptop&quot;, qaHelperWindow).toImageIcon(16)" type="code"/>
+                </Property>
+                <Property name="text" type="java.lang.String" value="Open Inventory Manager on PCsCRM.com to Set Product Type"/>
+              </Properties>
+              <Events>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menSetProductTypeActionPerformed"/>
+              </Events>
+            </MenuItem>
+            <MenuItem class="javax.swing.JMenuItem" name="menRunOemConfig">
+              <Properties>
+                <Property name="icon" type="javax.swing.Icon" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
+                  <Connection code="new TwemojiImage(&quot;Receipt&quot;, qaHelperWindow).toImageIcon(16)" type="code"/>
+                </Property>
+                <Property name="text" type="java.lang.String" value="Prepare for Shipping to End User (Run &quot;oem-config-prepare&quot;)"/>
+              </Properties>
+              <Events>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menRunOemConfigActionPerformed"/>
+              </Events>
+            </MenuItem>
             <MenuItem class="javax.swing.JMenuItem" name="menLogOut">
               <Properties>
                 <Property name="icon" type="javax.swing.Icon" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
@@ -135,24 +213,6 @@
               </Properties>
               <Events>
                 <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menLogOutActionPerformed"/>
-              </Events>
-            </MenuItem>
-          </SubComponents>
-        </Menu>
-        <Menu class="javax.swing.JMenu" name="testsMenu">
-          <Properties>
-            <Property name="text" type="java.lang.String" value="Tests"/>
-          </Properties>
-          <SubComponents>
-            <MenuItem class="javax.swing.JMenuItem" name="menForceShowScreenKeyboardAndMouseTests">
-              <Properties>
-                <Property name="icon" type="javax.swing.Icon" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
-                  <Connection code="new TwemojiImage(&quot;Laptop&quot;, qaHelperWindow).toImageIcon(16)" type="code"/>
-                </Property>
-                <Property name="text" type="java.lang.String" value="Force Show Screen, Keyboard, and Mouse Tests"/>
-              </Properties>
-              <Events>
-                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menForceShowScreenKeyboardAndMouseTestsActionPerformed"/>
               </Events>
             </MenuItem>
           </SubComponents>
@@ -176,14 +236,6 @@
               </Properties>
               <Events>
                 <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menInstallZoomActionPerformed"/>
-              </Events>
-            </MenuItem>
-            <MenuItem class="javax.swing.JMenuItem" name="menInstallSkype">
-              <Properties>
-                <Property name="text" type="java.lang.String" value="Install Skype"/>
-              </Properties>
-              <Events>
-                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="menInstallSkypeActionPerformed"/>
               </Events>
             </MenuItem>
             <MenuItem class="javax.swing.JMenuItem" name="menInstallTeamViewer">
@@ -351,15 +403,12 @@
   <Layout>
     <DimensionLayout dim="0">
       <Group type="103" groupAlignment="0" attributes="0">
-          <Component id="contentScrollPane" alignment="1" max="32767" attributes="0"/>
+          <Component id="contentScrollPane" alignment="0" max="32767" attributes="0"/>
       </Group>
     </DimensionLayout>
     <DimensionLayout dim="1">
       <Group type="103" groupAlignment="0" attributes="0">
-          <Group type="102" alignment="1" attributes="0">
-              <EmptySpace min="-2" pref="0" max="-2" attributes="0"/>
-              <Component id="contentScrollPane" max="32767" attributes="0"/>
-          </Group>
+          <Component id="contentScrollPane" alignment="0" max="32767" attributes="0"/>
       </Group>
     </DimensionLayout>
   </Layout>
@@ -517,14 +566,16 @@
                                       </Group>
                                       <EmptySpace type="unrelated" max="-2" attributes="0"/>
                                       <Group type="103" groupAlignment="0" attributes="0">
-                                          <Component id="btnCheckWindowsActivation" linkSize="33" min="-2" max="-2" attributes="0"/>
-                                          <Component id="btnVerifyWindowsActivation" linkSize="33" min="-2" max="-2" attributes="0"/>
+                                          <Component id="btnCheckWindowsLicense" linkSize="33" min="-2" max="-2" attributes="0"/>
+                                          <Component id="btnVerifyWindowsLicense" linkSize="33" min="-2" max="-2" attributes="0"/>
                                       </Group>
                                       <EmptySpace type="unrelated" max="-2" attributes="0"/>
                                       <Group type="103" groupAlignment="0" attributes="0">
                                           <Component id="btnCheckRemoteManagement" linkSize="32" min="-2" max="-2" attributes="0"/>
                                           <Component id="btnVerifyRemoteManagement" linkSize="32" min="-2" max="-2" attributes="0"/>
                                       </Group>
+                                      <EmptySpace type="unrelated" max="-2" attributes="0"/>
+                                      <Component id="btnSetConditionAndNotes" linkSize="35" min="-2" max="-2" attributes="0"/>
                                   </Group>
                                   <Group type="102" alignment="0" attributes="0">
                                       <Component id="lblMoreTests" linkSize="19" min="-2" max="-2" attributes="0"/>
@@ -552,11 +603,11 @@
                                   <Group type="102" alignment="0" attributes="0">
                                       <Component id="btnReloadSpecs" linkSize="35" min="-2" max="-2" attributes="0"/>
                                       <EmptySpace min="-2" max="-2" attributes="0"/>
-                                      <Component id="btnSaveSpecs" min="-2" max="-2" attributes="0"/>
+                                      <Component id="btnSaveOrPrintSpecs" min="-2" max="-2" attributes="0"/>
                                       <EmptySpace max="-2" attributes="0"/>
                                       <Component id="btnSystemInfo" min="-2" max="-2" attributes="0"/>
                                       <EmptySpace min="-2" max="-2" attributes="0"/>
-                                      <Component id="btnPIDHistory" min="-2" max="-2" attributes="0"/>
+                                      <Component id="btnStatusHistory" min="-2" max="-2" attributes="0"/>
                                       <EmptySpace max="-2" attributes="0"/>
                                       <Component id="btnCredits" min="-2" max="-2" attributes="0"/>
                                       <EmptySpace type="separate" max="32767" attributes="0"/>
@@ -690,32 +741,37 @@
                       <EmptySpace min="-2" pref="12" max="-2" attributes="0"/>
                       <Component id="middleSeparator2" min="-2" max="-2" attributes="0"/>
                       <EmptySpace type="unrelated" max="-2" attributes="0"/>
-                      <Group type="103" groupAlignment="3" attributes="0">
-                          <Component id="lblTasks" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnSetupBIOS" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnCheckPorts" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnCheckDrivers" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnSystemUpdates" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnCheckWindowsActivation" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnCheckRemoteManagement" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                      </Group>
-                      <EmptySpace max="-2" attributes="0"/>
-                      <Group type="103" groupAlignment="3" attributes="0">
-                          <Component id="btnVerifyBIOS" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnVerifyPorts" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnVerifyDrivers" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnVerifySystemUpdates" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnVerifyRemoteManagement" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnVerifyWindowsActivation" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                      <Group type="103" groupAlignment="0" max="-2" attributes="0">
+                          <Group type="102" attributes="0">
+                              <Group type="103" groupAlignment="3" attributes="0">
+                                  <Component id="lblTasks" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                                  <Component id="btnSetupBIOS" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                                  <Component id="btnCheckPorts" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                                  <Component id="btnCheckDrivers" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                                  <Component id="btnSystemUpdates" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                                  <Component id="btnCheckWindowsLicense" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                                  <Component id="btnCheckRemoteManagement" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                              </Group>
+                              <EmptySpace max="-2" attributes="0"/>
+                              <Group type="103" groupAlignment="3" attributes="0">
+                                  <Component id="btnVerifyBIOS" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                                  <Component id="btnVerifyPorts" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                                  <Component id="btnVerifyDrivers" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                                  <Component id="btnVerifySystemUpdates" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                                  <Component id="btnVerifyRemoteManagement" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                                  <Component id="btnVerifyWindowsLicense" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                              </Group>
+                          </Group>
+                          <Component id="btnSetConditionAndNotes" max="32767" attributes="0"/>
                       </Group>
                       <EmptySpace type="unrelated" min="-2" max="-2" attributes="0"/>
                       <Component id="bottomSeparator" min="-2" max="-2" attributes="0"/>
                       <EmptySpace type="unrelated" min="-2" max="-2" attributes="0"/>
                       <Group type="103" groupAlignment="3" attributes="0">
                           <Component id="btnReloadSpecs" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnSaveSpecs" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                          <Component id="btnSaveOrPrintSpecs" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
                           <Component id="btnSystemInfo" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
-                          <Component id="btnPIDHistory" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
+                          <Component id="btnStatusHistory" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
                           <Component id="btnCredits" linkSize="15" alignment="3" min="-2" max="-2" attributes="0"/>
                           <Component id="lblTestModeT" alignment="3" min="-2" max="-2" attributes="0"/>
                           <Component id="lblTestModeE" alignment="3" min="-2" max="-2" attributes="0"/>
@@ -737,6 +793,9 @@
               <Properties>
                 <Property name="horizontalAlignment" type="int" value="0"/>
                 <Property name="text" type="java.lang.String" value="&lt;html&gt;&lt;b style=&apos;font-size: larger&apos;&gt;ERROR&lt;/b&gt;&lt;/html&gt;"/>
+                <Property name="componentPopupMenu" type="javax.swing.JPopupMenu" editor="org.netbeans.modules.form.ComponentChooserEditor">
+                  <ComponentRef name="specValueRightClickMenu"/>
+                </Property>
               </Properties>
             </Component>
             <Component class="javax.swing.JLabel" name="lblUsername">
@@ -758,7 +817,7 @@
             <Component class="javax.swing.JLabel" name="lblPassword">
               <Properties>
                 <Property name="displayedMnemonic" type="int" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
-                  <Connection code="KeyEvent.VK_W" type="code"/>
+                  <Connection code="KeyEvent.VK_P" type="code"/>
                 </Property>
                 <Property name="labelFor" type="java.awt.Component" editor="org.netbeans.modules.form.ComponentChooserEditor">
                   <ComponentRef name="pswPassword"/>
@@ -774,12 +833,12 @@
             <Component class="javax.swing.JLabel" name="lblPID">
               <Properties>
                 <Property name="displayedMnemonic" type="int" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
-                  <Connection code="KeyEvent.VK_P" type="code"/>
+                  <Connection code="KeyEvent.VK_I" type="code"/>
                 </Property>
                 <Property name="labelFor" type="java.awt.Component" editor="org.netbeans.modules.form.ComponentChooserEditor">
                   <ComponentRef name="txtPID"/>
                 </Property>
-                <Property name="text" type="java.lang.String" value="PID:"/>
+                <Property name="text" type="java.lang.String" value="ID:"/>
               </Properties>
             </Component>
             <Component class="javax.swing.JTextField" name="txtPID">
@@ -853,7 +912,7 @@
                 <Property name="mnemonic" type="int" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
                   <Connection code="KeyEvent.VK_C" type="code"/>
                 </Property>
-                <Property name="text" type="java.lang.String" value="Check PID"/>
+                <Property name="text" type="java.lang.String" value="Check ID"/>
                 <Property name="border" type="javax.swing.border.Border" editor="org.netbeans.modules.form.editors2.BorderEditor">
                   <Border info="null"/>
                 </Property>
@@ -957,7 +1016,7 @@
             <Component class="javax.swing.JLabel" name="lblBatteryCapacity">
               <Properties>
                 <Property name="horizontalAlignment" type="int" value="4"/>
-                <Property name="text" type="java.lang.String" value="&lt;html&gt;&lt;b&gt;Battery:&lt;/b&gt; ERROR&lt;/html&gt;"/>
+                <Property name="text" type="java.lang.String" value="&lt;html&gt;&lt;b&gt;Battery Health:&lt;/b&gt; ERROR&lt;/html&gt;"/>
                 <Property name="componentPopupMenu" type="javax.swing.JPopupMenu" editor="org.netbeans.modules.form.ComponentChooserEditor">
                   <ComponentRef name="specValueRightClickMenu"/>
                 </Property>
@@ -1340,23 +1399,23 @@
                 <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnVerifySystemUpdatesActionPerformed"/>
               </Events>
             </Component>
-            <Component class="javax.swing.JButton" name="btnCheckWindowsActivation">
+            <Component class="javax.swing.JButton" name="btnCheckWindowsLicense">
               <Properties>
-                <Property name="text" type="java.lang.String" value="Check Windows Activation"/>
+                <Property name="text" type="java.lang.String" value="Check Windows License"/>
                 <Property name="margin" type="java.awt.Insets" editor="org.netbeans.beaninfo.editors.InsetsEditor">
                   <Insets value="[0, 8, 0, 8]"/>
                 </Property>
               </Properties>
               <Events>
-                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnCheckWindowsActivationActionPerformed"/>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnCheckWindowsLicenseActionPerformed"/>
               </Events>
             </Component>
-            <Component class="javax.swing.JButton" name="btnVerifyWindowsActivation">
+            <Component class="javax.swing.JButton" name="btnVerifyWindowsLicense">
               <Properties>
                 <Property name="text" type="java.lang.String" value="Verify"/>
               </Properties>
               <Events>
-                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnVerifyWindowsActivationActionPerformed"/>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnVerifyWindowsLicenseActionPerformed"/>
               </Events>
             </Component>
             <Component class="javax.swing.JButton" name="btnCheckRemoteManagement">
@@ -1378,6 +1437,17 @@
                 <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnVerifyRemoteManagementActionPerformed"/>
               </Events>
             </Component>
+            <Component class="javax.swing.JButton" name="btnSetConditionAndNotes">
+              <Properties>
+                <Property name="text" type="java.lang.String" value="Add Notes"/>
+                <Property name="margin" type="java.awt.Insets" editor="org.netbeans.beaninfo.editors.InsetsEditor">
+                  <Insets value="[0, 8, 0, 8]"/>
+                </Property>
+              </Properties>
+              <Events>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnSetConditionAndNotesActionPerformed"/>
+              </Events>
+            </Component>
             <Component class="javax.swing.JSeparator" name="bottomSeparator">
             </Component>
             <Component class="javax.swing.JButton" name="btnReloadSpecs">
@@ -1394,7 +1464,7 @@
                 <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnReloadSpecsActionPerformed"/>
               </Events>
             </Component>
-            <Component class="javax.swing.JButton" name="btnSaveSpecs">
+            <Component class="javax.swing.JButton" name="btnSaveOrPrintSpecs">
               <Properties>
                 <Property name="mnemonic" type="int" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
                   <Connection code="KeyEvent.VK_S" type="code"/>
@@ -1405,13 +1475,13 @@
                 </Property>
               </Properties>
               <Events>
-                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnSaveSpecsActionPerformed"/>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnSaveOrPrintSpecsActionPerformed"/>
               </Events>
             </Component>
             <Component class="javax.swing.JButton" name="btnSystemInfo">
               <Properties>
                 <Property name="mnemonic" type="int" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
-                  <Connection code="KeyEvent.VK_I" type="code"/>
+                  <Connection code="KeyEvent.VK_N" type="code"/>
                 </Property>
                 <Property name="text" type="java.lang.String" value="System Info"/>
                 <Property name="margin" type="java.awt.Insets" editor="org.netbeans.beaninfo.editors.InsetsEditor">
@@ -1422,18 +1492,18 @@
                 <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnSystemInfoActionPerformed"/>
               </Events>
             </Component>
-            <Component class="javax.swing.JButton" name="btnPIDHistory">
+            <Component class="javax.swing.JButton" name="btnStatusHistory">
               <Properties>
                 <Property name="mnemonic" type="int" editor="org.netbeans.modules.form.RADConnectionPropertyEditor">
                   <Connection code="KeyEvent.VK_H" type="code"/>
                 </Property>
-                <Property name="text" type="java.lang.String" value="PID History"/>
+                <Property name="text" type="java.lang.String" value="Status History"/>
                 <Property name="margin" type="java.awt.Insets" editor="org.netbeans.beaninfo.editors.InsetsEditor">
                   <Insets value="[0, 14, 0, 14]"/>
                 </Property>
               </Properties>
               <Events>
-                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnPIDHistoryActionPerformed"/>
+                <EventHandler event="actionPerformed" listener="java.awt.event.ActionListener" parameters="java.awt.event.ActionEvent" handler="btnStatusHistoryActionPerformed"/>
               </Events>
             </Component>
             <Component class="javax.swing.JButton" name="btnCredits">
