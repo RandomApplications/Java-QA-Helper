@@ -18,7 +18,6 @@
  */
 package GUI;
 
-import SOAP.SOAPParse;
 import Utilities.*;
 import com.formdev.flatlaf.util.UIScale;
 import java.awt.Desktop;
@@ -34,6 +33,9 @@ import javax.swing.JLabel;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * This class gathers and displays the PC's history from the CRM.
@@ -44,7 +46,6 @@ public class StatusHistoryWindow extends javax.swing.JFrame {
 
     private final ArrayList<HashMap<String, String>> historyData;
     private final PrivateStrings privateStrings = new PrivateStrings();
-    private final String[] rawColumnNames = privateStrings.getPCsCRMStatusHistoryRawColumnNames();
     private final String[] displayColumnNames = privateStrings.getPCsCRMStatusHistoryDisplayColumnNames();
     private PCsCRMManager PCsCRMManager;
     private boolean isTestMode = false;
@@ -63,29 +64,39 @@ public class StatusHistoryWindow extends javax.swing.JFrame {
 
         historyData = new ArrayList<>();
 
-        if ((statusHistoryDataContent != null) && statusHistoryDataContent.startsWith("<?xml")) {
+        if (statusHistoryDataContent != null) {
             try {
-                ArrayList<HashMap<String, String>> statusHistoryData = new SOAPParse().parseDataset(statusHistoryDataContent);
+                String[] rawColumnNames = privateStrings.getPCsCRMStatusHistoryRawColumnNames();
 
-                if ((statusHistoryData != null) && !statusHistoryData.isEmpty()) {
-                    // Must sort because may come from the API out of order.
-                    String rawDateColumnName = rawColumnNames[0];
-                    Collections.sort(statusHistoryData, (HashMap<String, String> thisRow, HashMap<String, String> thatRow) -> {
-                        return thatRow.get(rawDateColumnName).compareTo(thisRow.get(rawDateColumnName)); // Sort as strings because converting to Date() loses sub-second precision.
-                    });
+                JSONArray statusHistoryJsonArray = new JSONArray(new JSONObject(statusHistoryDataContent).getString("responseData"));
+                for (int thisStatusHistoryIndex = 0; thisStatusHistoryIndex < statusHistoryJsonArray.length(); thisStatusHistoryIndex++) {
+                    JSONObject thisStatusHistoryDictionary = statusHistoryJsonArray.getJSONObject(thisStatusHistoryIndex);
 
-                    historyData.addAll(statusHistoryData);
+                    if (thisStatusHistoryDictionary.has(rawColumnNames[0]) && thisStatusHistoryDictionary.has(rawColumnNames[1]) && thisStatusHistoryDictionary.has(rawColumnNames[2])) {
+                        HashMap<String, String> thisStatusHistoryEvent = new HashMap<>();
+                        thisStatusHistoryEvent.put(displayColumnNames[0], thisStatusHistoryDictionary.getString(rawColumnNames[0]));
+                        thisStatusHistoryEvent.put(displayColumnNames[1], thisStatusHistoryDictionary.getString(rawColumnNames[1]));
+                        thisStatusHistoryEvent.put(displayColumnNames[2], thisStatusHistoryDictionary.getString(rawColumnNames[2]));
+                        historyData.add(thisStatusHistoryEvent);
+                    }
                 }
-            } catch (Exception parseStatusHistoryException) {
+            } catch (JSONException parseStatusHistoryException) {
                 System.out.println("parseStatusHistoryException: " + parseStatusHistoryException);
             }
         }
 
         if (historyData.isEmpty()) {
-            historyData.add(new HashMap<>());
-            historyData.get(0).put(rawColumnNames[0], "UNKNOWN DATE");
-            historyData.get(0).put(rawColumnNames[1], "UNKNOWN STATUS");
-            historyData.get(0).put(rawColumnNames[2], "UNKNOWN TECH");
+            HashMap<String, String> unknownStatusHistoryEvent = new HashMap<>();
+            unknownStatusHistoryEvent.put(displayColumnNames[0], "UNKNOWN DATE");
+            unknownStatusHistoryEvent.put(displayColumnNames[1], "UNKNOWN STATUS");
+            unknownStatusHistoryEvent.put(displayColumnNames[2], "UNKNOWN TECH");
+            historyData.add(unknownStatusHistoryEvent);
+        } else {
+            // Must sort because may come from the API out of order.
+            String sortColumnName = displayColumnNames[0];
+            Collections.sort(historyData, (HashMap<String, String> thisRow, HashMap<String, String> thatRow) -> {
+                return thatRow.get(sortColumnName).compareTo(thisRow.get(sortColumnName)); // Sort as strings because converting to Date() loses sub-second precision.
+            });
         }
 
         initComponents();
@@ -161,7 +172,7 @@ public class StatusHistoryWindow extends javax.swing.JFrame {
             String[] rowArray = new String[displayColumnNames.length];
             int i = 0;
             for (String key : row.keySet()) {
-                if (key.equals(rawColumnNames[0])) {
+                if (key.equals(displayColumnNames[0])) {
                     String thisDateString = row.get(key);
 
                     try {
@@ -173,10 +184,10 @@ public class StatusHistoryWindow extends javax.swing.JFrame {
                     } catch (ParseException parseDateException) {
                         rowArray[0] = thisDateString;
                     }
-                } else if (key.equals(rawColumnNames[1])) {
+                } else if (key.equals(displayColumnNames[1])) {
                     rowArray[1] = row.get(key);
-                } else if (key.equals(rawColumnNames[2])) {
-                    String rawUsername = row.get(rawColumnNames[2]);
+                } else if (key.equals(displayColumnNames[2])) {
+                    String rawUsername = row.get(displayColumnNames[2]);
                     if (rawUsername.equals("UNKNOWN TECH")) {
                         rowArray[2] = rawUsername;
                     } else {
@@ -220,7 +231,7 @@ public class StatusHistoryWindow extends javax.swing.JFrame {
         }
 
         HashMap<String, String> latestHistoryItem = historyData.get(0);
-        String rawUsername = latestHistoryItem.get(rawColumnNames[2]);
+        String rawUsername = latestHistoryItem.get(displayColumnNames[2]);
         if (rawUsername.equals("UNKNOWN TECH")) {
             return rawUsername;
         }

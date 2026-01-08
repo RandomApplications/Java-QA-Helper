@@ -50,6 +50,8 @@ public class QACreditsWindow extends javax.swing.JFrame {
 
         if (System.getProperty("os.name").startsWith("Windows") && (new File("\\Windows\\System32\\startnet.cmd").exists() || new File("\\Windows\\System32\\winpeshl.ini").exists()) && !new CommandReader(new String[]{"\\Windows\\System32\\reg.exe", "query", "HKLM\\SYSTEM\\Setup", "/v", "FactoryPreInstallInProgress"}).getFirstOutputLineContaining("0x1").isEmpty()) {
             setAlwaysOnTop(true); // Want all windows to be always on top in WinPE so they don't get lost behind full screen PowerShell window.
+            togglePeripheralTestModeMenu.setText("IPDT Installation Mode");
+            menTogglePeripheralTestMode.setText("Toggle IPDT (Intel Processor Diagnostic Tool) Installation Mode");
         }
 
         appIconLabel.setPreferredSize(null); // Undo preferred size so that the icon is displayed properly with HiDPI on Linux. (But keep preferred size in GUI builder so the design looks right).
@@ -243,6 +245,8 @@ public class QACreditsWindow extends javax.swing.JFrame {
         String osName = System.getProperty("os.name");
         ArrayList<File> peripheralTestModeFlagPaths = new ArrayList<>();
 
+        boolean isWindowsPE = false;
+
         if (osName.startsWith("Linux")) {
             String defaultDirectory = System.getProperty("user.home") + "/.local/qa-helper";
 
@@ -267,10 +271,17 @@ public class QACreditsWindow extends javax.swing.JFrame {
         } else if (osName.startsWith("Windows")) {
             String windowsBuildInfoPath = "\\Install\\"; // TODO: Choose a better Windows folder at some point.
 
-            peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode"));
-            peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode.flag"));
-            peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode.txt"));
-            peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode.flag.txt"));
+            if ((new File("\\Windows\\System32\\startnet.cmd").exists() || new File("\\Windows\\System32\\winpeshl.ini").exists()) && !new CommandReader(new String[]{"\\Windows\\System32\\reg.exe", "query", "HKLM\\SYSTEM\\Setup", "/v", "FactoryPreInstallInProgress"}).getFirstOutputLineContaining("0x1").isEmpty()) {
+                isWindowsPE = true;
+                peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-IPDT"));
+                peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "IPDT"));
+                peripheralTestModeFlagPaths.add(new File("\\Windows\\System32\\fgFLAG-IPDT"));
+            } else {
+                peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode"));
+                peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode.flag"));
+                peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode.txt"));
+                peripheralTestModeFlagPaths.add(new File(windowsBuildInfoPath + "fgFLAG-PeripheralTestMode.flag.txt"));
+            }
         }
 
         boolean isPeripheralTestMode = false;
@@ -282,8 +293,12 @@ public class QACreditsWindow extends javax.swing.JFrame {
             }
         }
 
-        String[] confirmTogglePeripheralTestModeDialogButtons = new String[]{(isPeripheralTestMode ? "Disable" : "Enable") + " Peripheral Test Mode", "Cancel"};
-        int linuxWarningDialogReturn = JOptionPane.showOptionDialog(null, "<html><b>Are you sure you want to " + (isPeripheralTestMode ? "<i>disable</i>" : "<u>enable</u>") + " Peripheral Test Mode?</b><br/><br/>After Peripheral Test Mode has been " + (isPeripheralTestMode ? "disabled" : "enabled") + ", QA Helper will quit and you will need to manually re-launch it.</html>", "QA Helper  —  Confirm " + (isPeripheralTestMode ? "Disable" : "Enable") + " Peripheral Test Mode", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, confirmTogglePeripheralTestModeDialogButtons, confirmTogglePeripheralTestModeDialogButtons[0]);
+        if (isWindowsPE) {
+            setAlwaysOnTop(false);
+        }
+
+        String[] confirmTogglePeripheralTestModeDialogButtons = new String[]{(isPeripheralTestMode ? "Disable" : "Enable") + (isWindowsPE ? " IPDT Installation Mode" : " Peripheral Test Mode"), "Cancel"};
+        int linuxWarningDialogReturn = JOptionPane.showOptionDialog(null, "<html><b>Are you sure you want to " + (isPeripheralTestMode ? "<i>disable</i>" : "<u>enable</u>") + (isWindowsPE ? " IPDT (Intel Processor Diagnostic Tool) Installation Mode" : " Peripheral Test Mode") + "?</b><br/><br/>" + (isWindowsPE ? "After IPDT Installation Mode has been " + (isPeripheralTestMode ? "disabled" : "enabled") + ", QA Helper will quit to continue the installation process." : "After Peripheral Test Mode has been " + (isPeripheralTestMode ? "disabled" : "enabled") + ", QA Helper will quit and you will need to manually re-launch it.") + "</html>", "QA Helper  —  Confirm " + (isPeripheralTestMode ? "Disable" : "Enable") + (isWindowsPE ? " IPDT Installation Mode" : " Peripheral Test Mode"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, confirmTogglePeripheralTestModeDialogButtons, confirmTogglePeripheralTestModeDialogButtons[0]);
         if (linuxWarningDialogReturn == JOptionPane.YES_OPTION) {
             if (isPeripheralTestMode) {
                 for (File thisPeripheralTestModeFlagPath : peripheralTestModeFlagPaths) {
@@ -301,6 +316,10 @@ public class QACreditsWindow extends javax.swing.JFrame {
             }
 
             System.exit(0);
+        }
+
+        if (isWindowsPE) {
+            setAlwaysOnTop(true);
         }
     }//GEN-LAST:event_menTogglePeripheralTestModeActionPerformed
 

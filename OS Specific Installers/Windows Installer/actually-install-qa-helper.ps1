@@ -1,7 +1,7 @@
 #
 # Created by Pico Mitchell (of Free Geek) on 08/23/19
 # For QA Helper
-# Last Updated: 8/25/25
+# Last Updated: 11/3/25
 #
 # MIT License
 #
@@ -61,7 +61,7 @@ if ((-not $uninstall) -and (-not (Test-Connection 'apps.freegeek.org' -Count 1 -
 
 Start-Sleep 2 # Sleep for a couple seconds to be able to see last results before clearing screen.
 
-$installPath = '\Install\QA Helper'
+$installPath = "$Env:SystemDrive\Install\QA Helper"
 $desktopPath = [Environment]::GetFolderPath('Desktop')
 
 if ($uninstall -or $reinstall) {
@@ -92,10 +92,10 @@ if ($uninstall -or $reinstall) {
 	}
 	
 	try {
-		if (Test-Path '\Install\Launch QA Helper.lnk') {
+		if (Test-Path "$Env:SystemDrive\Install\Launch QA Helper.lnk") {
 			Write-Output '    Deleting Shortcut Within "\Install" Folder...'
 
-			Remove-Item '\Install\Launch QA Helper.lnk' -Force -ErrorAction Stop
+			Remove-Item "$Env:SystemDrive\Install\Launch QA Helper.lnk" -Force -ErrorAction Stop
 		} else {
 			Write-Host '    Shortcut Within "\Install" Folder Was Already Deleted' -ForegroundColor Yellow
 		}
@@ -242,7 +242,7 @@ if (-not $uninstall) {
 		if (Test-Path "$installPath\java-jre\bin\javaw.exe") {
 			Write-Host "`n`n  SKIPPING JAVA INSTALLATION: Java Was Already Installed" -ForegroundColor Yellow
 		} else {
-			$jdkVersion = '21.0.8+9'
+			$jdkVersion = '25.0.1+8'
 
 			Write-Output "`n`n  Installing Java $($jdkVersion.Replace('_', '+')):"
 			
@@ -302,7 +302,7 @@ if (-not $uninstall) {
 					Write-Host '    IMPORTANT: Internet Is Required During Installation Process' -ForegroundColor Red
 
 					if ($installJavaAttempt -gt 1) { # Download Temurin JRE from Adoptium if failed to download condensed custom JLink JRE multiple times (will do 2 download attempts at this location).
-                        $jdkDownloadURL = 'https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse'
+                        $jdkDownloadURL = 'https://api.adoptium.net/v3/binary/latest/25/ga/windows/x64/jre/hotspot/normal/eclipse'
                     } elseif ($installJavaAttempt -gt 0) { # Make sure we've tried the apps.freegeek.org location at least once before falling back on Temurin JRE download from Adoptium.
                         $jdkDownloadURL = "https://apps.freegeek.org/qa-helper/download/resources/windows/jlink-jre-$($jdkVersion.Replace('+', '_'))_windows-x64.zip"
 					}
@@ -320,9 +320,9 @@ if (-not $uninstall) {
 
 		if (Test-Path "$installPath\java-jre\bin\javaw.exe") {
 			# Don't bother creating any launcher shortcuts in WinPE
-			$isWinPE = (((Test-Path '\Windows\System32\startnet.cmd') -Or (Test-Path '\Windows\System32\winpeshl.ini')) -And (Get-ItemProperty 'HKLM:\SYSTEM\Setup').FactoryPreInstallInProgress)
+			$isWinPE = (((Test-Path "$Env:SystemRoot\System32\startnet.cmd") -Or (Test-Path "$Env:SystemRoot\System32\winpeshl.ini")) -And (Get-ItemProperty 'HKLM:\SYSTEM\Setup').FactoryPreInstallInProgress)
 			
-			if ((-not $isWinPE) -and ($forceUpdate -or (-not (Test-Path "$installPath\qa-helper-icon.ico")) -or (-not (Test-Path "$installPath\Launch QA Helper.lnk")) -or (-not (Test-Path "\Install\Launch QA Helper.lnk")) -or (-not (Test-Path "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\QA Helper.lnk")) -or (-not (Test-Path "$desktopPath\QA Helper.lnk")))) {
+			if ((-not $isWinPE) -and ($forceUpdate -or (-not (Test-Path "$installPath\qa-helper-icon.ico")) -or (-not (Test-Path "$installPath\Launch QA Helper.lnk")) -or (-not (Test-Path "$Env:SystemDrive\Install\Launch QA Helper.lnk")) -or (-not (Test-Path "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\QA Helper.lnk")) -or (-not (Test-Path "$desktopPath\QA Helper.lnk")))) {
 				Write-Output "`n`n  Creating QA Helper Launcher Shortcuts:"
 
 				$launcherCreationSuccessful = $true
@@ -375,11 +375,11 @@ if (-not $uninstall) {
 				try {
 					Write-Output '    Creating Shortcut Within "\Install" Folder...'
 
-					if (Test-Path '\Install\Launch QA Helper.lnk') {
-						Remove-Item '\Install\Launch QA Helper.lnk' -Force -ErrorAction Stop
+					if (Test-Path "$Env:SystemDrive\Install\Launch QA Helper.lnk") {
+						Remove-Item "$Env:SystemDrive\Install\Launch QA Helper.lnk" -Force -ErrorAction Stop
 					}
 
-					Copy-Item "$installPath\Launch QA Helper.lnk" '\Install\Launch QA Helper.lnk' -Force -ErrorAction Stop
+					Copy-Item "$installPath\Launch QA Helper.lnk" "$Env:SystemDrive\Install\Launch QA Helper.lnk" -Force -ErrorAction Stop
 				} catch {
 					Write-Host "    ERROR: $_" -ForegroundColor Red
 					Write-Host '    ERROR CREATING SHORTCUT: Failed to create shortcut within "\Install" folder.' -ForegroundColor Red

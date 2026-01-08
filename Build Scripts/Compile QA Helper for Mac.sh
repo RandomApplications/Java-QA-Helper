@@ -22,11 +22,19 @@
 PATH='/usr/bin:/bin:/usr/sbin:/sbin:/usr/libexec' # Add "/usr/libexec" to PATH for easy access to PlistBuddy. ("export" is not required since PATH is already exported in the environment, therefore modifying it modifies the already exported variable.)
 TMPDIR="$([[ -d "${TMPDIR}" && -w "${TMPDIR}" ]] && echo "${TMPDIR%/}" || echo '/private/tmp')" # Make sure "TMPDIR" is always set and that it DOES NOT have a trailing slash for consistency regardless of the current environment.
 
+declare -a jdk_build_versions=(
+	'21' # JDK 21 LTS is the newest LTS that supports macOS 10.12 Sierra through macOS 10.15 Catalina and newer AND can also be build as Universal for Apple Silicon (JDK 25 LTS only supports macOS 11 Big Sur and newer).
+	'16' # JDK 16 is the newest that still supports macOS 10.11 El Capitan.
+)
+
 if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running on macOS
 	PROJECT_PATH="$(cd "${BASH_SOURCE[0]%/*}/.." &> /dev/null && pwd -P)"
 	readonly PROJECT_PATH
 
-	readonly fgMIB_USERAPPS_PATH="${PROJECT_PATH}/../../MacLand/fgMIB Resources/Prepare OS Package/Package Resources/User/fg-demo/Apps/darwin-all-versions"
+	IS_APPLE_SILICON="$([[ "$(sysctl -in hw.optional.arm64)" == '1' ]] && echo 'true' || echo 'false')"
+	readonly IS_APPLE_SILICON
+
+	readonly fgMIB_USERAPPS_PATH="${PROJECT_PATH}/../../Mac Scripts/fgMIB Resources/Prepare OS Package/Package Resources/User/fg-demo/Apps/darwin-all-versions"
 
 	if [[ ! -e "${PROJECT_PATH}/dist/JAR for macOS/QA_Helper.jar" ]]; then
 		>&2 echo -e '\n\n!!! JAR for macOS NOT FOUND !!!'
@@ -34,21 +42,59 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 		exit 1
 	fi
 
-	declare -a jdk_base_paths=( '/Library/Java/JavaVirtualMachines' "${PROJECT_PATH}/../Java for El Captian" ) # Can build against multiple versions of Java (to be able to build old versions for El Capitan with JDK 16.0.2 which is the last to support El Capitan)
+	jdks_parent_path='/Users/Shared/Mac Deployment/JDKs'
+	if [[ ! -d "${jdks_parent_path}" ]]; then
+		mkdir -p "${jdks_parent_path}"
+	fi
 
-	for this_jdk_base_path in "${jdk_base_paths[@]}"; do
-		# Suppress ShellCheck suggestion to use "find" instead of "ls" since we need "ls -t" to sort by modification date, and this path shouldn't contain non-alphanumeric characters.
-		# shellcheck disable=SC2012
-		java_version="$(ls -t "${this_jdk_base_path}" | awk -F '-|[.]jdk' '/.jdk$/ { print $2; exit }')"
+	for this_jdk_major_version in "${jdk_build_versions[@]}"; do
+		jdk_architecture='x64'
+		if $IS_APPLE_SILICON && (( this_jdk_major_version >= 17 )); then
+			jdk_architecture='aarch64'
+		fi
 
-		if [[ -z "${java_version}" ]]; then
-			>&2 echo -e "\n\n!!! JAVA NOT FOUND IN '${this_jdk_base_path}' !!!"
+		this_jdk_full_version="$(osascript -l 'JavaScript' -e 'run = argv => JSON.parse(argv[0])[0].version_data.openjdk_version' -- "$(curl -m 5 -sf "https://api.adoptium.net/v3/assets/feature_releases/${this_jdk_major_version}/ga")" 2> /dev/null)"
+		this_jdk_full_version="${this_jdk_full_version%-LTS}"
+
+		if [[ -z "${this_jdk_full_version}" ]]; then
+			>&2 echo -e "\n!!! FAILED TO RETRIEVE LATEST FULL VERSION FOR JDK ${this_jdk_major_version} !!!"
 			afplay '/System/Library/Sounds/Basso.aiff'
 			exit 2
 		fi
 
+		this_jdk_path="${jdks_parent_path}/jdk-${this_jdk_full_version}"
+
+		if [[ ! -d "${this_jdk_path}" ]]; then
+			rm -rf "${jdks_parent_path}/jdk-${this_jdk_major_version}."*
+
+			jdk_download_url="$(curl -m 5 -sfw '%{redirect_url}' "https://api.adoptium.net/v3/binary/latest/${this_jdk_major_version}/ga/mac/${jdk_architecture}/jdk/hotspot/normal/eclipse")"
+			if [[ -z "${jdk_download_url}" ]]; then
+				>&2 echo -e "\n!!! FAILED TO RETRIEVE JDK ${this_jdk_full_version} DOWNLOAD URL !!!"
+				afplay '/System/Library/Sounds/Basso.aiff'
+				exit 3
+			fi
+
+			jdk_archive_filename="${jdk_download_url##*/}"
+
+			echo -e "\nDownloading JDK ${this_jdk_full_version} \"${jdk_download_url}\"..."
+			rm -rf "${TMPDIR:?}/${jdk_archive_filename}"
+			curl --connect-timeout 5 -sfL "${jdk_download_url}" -o "${TMPDIR}/${jdk_archive_filename}"
+
+			if [[ -f "${TMPDIR}/${jdk_archive_filename}" ]]; then
+				echo -e "\nUnarchiving JDK ${this_jdk_full_version} \"${jdk_archive_filename}\"..."
+				tar -xzf "${TMPDIR}/${jdk_archive_filename}" -C "${jdks_parent_path}"
+				rm -f "${TMPDIR}/${jdk_archive_filename}"
+			fi
+		fi
+
+		if [[ ! -d "${this_jdk_path}" ]]; then
+			>&2 echo -e "\n!!! FAILED TO DOWNLOAD JDK ${this_jdk_full_version} !!!"
+			afplay '/System/Library/Sounds/Basso.aiff'
+			exit 4
+		fi
+
 		qa_helper_mac_zip_name=''
-		if (( ${java_version%%.*} >= 17 )); then
+		if (( this_jdk_major_version >= 17 )); then
 			echo -e '\n\nBUILDING MAC APP FOR SIERRA AND NEWER (UNIVERSAL BINARY)'
 			qa_helper_mac_zip_name='QAHelper-mac-universal.zip'
 		else
@@ -65,21 +111,19 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 		rm -rf "${PROJECT_PATH}/dist/QA Helper.app"
 		rm -rf "${PROJECT_PATH}/dist/jlink-jre"
 
-		echo -e "\nBuilding JRE Version ${java_version}..."
+		echo -e "\nBuilding JRE Version ${this_jdk_full_version}..."
 
-		jdk_path="${this_jdk_base_path}/jdk-${java_version}.jdk"
-
-		# jdeps="$("${jdk_path}/Contents/Home/bin/jdeps" --module-path "${PROJECT_PATH}/libs" --multi-release "${java_version%%.*}" --list-deps "${PROJECT_PATH}/dist/JAR for macOS/QA_Helper.jar" | tr -s '[:space:]' ',' | sed -E 's/^,|,$//g')"
+		# jdeps="$("${this_jdk_path}/Contents/Home/bin/jdeps" --module-path "${PROJECT_PATH}/libs" --multi-release "${this_jdk_major_version}" --list-deps "${PROJECT_PATH}/dist/JAR for macOS/QA_Helper.jar" | tr -s '[:space:]' ',' | sed -E 's/^,|,$//g')"
 		# echo "JDEPS: ${jdeps}" # Should be "java.base,java.datatransfer,java.desktop,java.logging"
 		# java.datatransfer is actually included within java.desktop (along with java.prefs and java.xml) so it doesn't actually need to be listed, but that's what jdeps returns.
 		jdeps='java.base,java.desktop,java.logging'
 
-		"${jdk_path}/Contents/Home/bin/jlink" \
+		"${this_jdk_path}/Contents/Home/bin/jlink" \
 			--add-modules "${jdeps}" \
 			--strip-debug \
 			--no-man-pages \
 			--no-header-files \
-			--compress "$( (( ${java_version%%.*} >= 21 )) && echo 'zip-9' || echo '2' )" \
+			--compress "$( (( this_jdk_major_version >= 21 )) && echo 'zip-9' || echo '2' )" \
 			--output "${PROJECT_PATH}/dist/jlink-jre"
 
 			# NOTE: DO NOT INCLUDE "--strip-native-commands" because we need the "java" binary within the app to be able to extract Keyboard_Test.jar from the QA_Helper.jar and run it with the JRE included within the QA Helper app.
@@ -93,6 +137,8 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 		app_version_and_type_display="${app_version} $([[ "${qa_helper_mac_zip_name}" == 'QAHelper-mac-universal.zip' ]] && echo '(Universal Binary)' || echo 'for El Capitan')"
 
 		echo -e "\nBuilding QA Helper Version ${app_version_and_type_display}..."
+
+		chmod -R +rX "${PROJECT_PATH}/macOS Build Resources"
 
 		jpackage_args=(
 			--type 'app-image'
@@ -120,7 +166,7 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 			jpackage_args+=( --java-options '--enable-native-access=ALL-UNNAMED' ) # If this is set on Java 16 (for El Capitan), the app WILL NOT LAUNCH.
 		fi
 
-		"${jdk_path}/Contents/Home/bin/jpackage" "${jpackage_args[@]}"
+		"${this_jdk_path}/Contents/Home/bin/jpackage" "${jpackage_args[@]}"
 
 		rm -rf "${PROJECT_PATH}/dist/jlink-jre"
 
@@ -151,12 +197,10 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 		if [[ "${qa_helper_mac_zip_name}" == 'QAHelper-mac-universal.zip' ]]; then
 			echo -e "\nMaking QA Helper Version ${app_version} Universal..."
 
-			is_building_on_apple_silicon="$([[ "$(sysctl -in hw.optional.arm64)" == '1' ]] && echo 'true' || echo 'false')"
-
 			# Also update app LSMinimumSystemVersion to match JVMMinimumSystemVersion (which should be 10.12.0 for Java 17-21).
-			jvm_minimum_system_version="$(PlistBuddy -c 'Print :JavaVM:JVMMinimumSystemVersion' "${jdk_path}/Contents/Info.plist" 2> /dev/null)"
+			jvm_minimum_system_version="$(PlistBuddy -c 'Print :JavaVM:JVMMinimumSystemVersion' "${this_jdk_path}/Contents/Info.plist" 2> /dev/null)"
 
-			if $is_building_on_apple_silicon && (( ${java_version%%.*} >= 17 )); then
+			if $IS_APPLE_SILICON && (( this_jdk_major_version >= 17 )); then
 				jvm_minimum_system_version='10.12.0' # When running on Apple Silicon, the JVMMinimumSystemVersion "11.00.00" since that is the first Apple Silicon version of macOS, but since we are building a Universal app, use the Intel JDK minimum version which is "10.12.0" for 17 through 21.
 			fi
 
@@ -164,16 +208,21 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 				plutil -replace 'LSMinimumSystemVersion' -string "${jvm_minimum_system_version}" "${PROJECT_PATH}/dist/QA Helper.app/Contents/Info.plist"
 			fi
 
-			alternate_app_binaries_for_universal_binary_name="Java ${java_version} $($is_building_on_apple_silicon && echo 'Intel' || echo 'Apple Silicon') App Binaries"
-			alternate_app_binaries_for_universal_binary="${PROJECT_PATH}/macOS Build Resources/Universal Binary Parts/${alternate_app_binaries_for_universal_binary_name}/QA Helper.app" # Get alternate arch folder from what is running.
-			if [[ -d "${alternate_app_binaries_for_universal_binary}" ]]; then
-				# If building on an Intel Mac, the files within the "alternate_app_binaries_for_universal_binary" folder must be created by running
-				# the "Create Alternate App Binaries for Mac Univeral Binary.sh" script (within the "Build Scripts" folder) on an Apple Silicon Mac
-				# in advance and then copying the resulting files into the "Java [VERSION] Apple Silicon App Binaries" folder.
+			alternate_app_binaries_for_universal_binary_name="Java ${this_jdk_full_version} $($IS_APPLE_SILICON && echo 'Intel' || echo 'Apple Silicon') App Binaries"
+			alternate_app_binaries_for_universal_binary="/Users/Shared/Mac Deployment/QA Helper Universal Binary Parts/${alternate_app_binaries_for_universal_binary_name}/QA Helper.app" # Get alternate arch folder from what is running.
+			# If building on an Intel Mac, the files within the "alternate_app_binaries_for_universal_binary" folder must be created by running
+			# the "Create Alternate App Binaries for Mac Univeral Binary.sh" script (within the "Build Scripts" folder) on an Apple Silicon Mac
+			# in advance and then copying the resulting files into the "Java [VERSION] Apple Silicon App Binaries" folder.
+
+			if $IS_APPLE_SILICON && [[ ! -d "${alternate_app_binaries_for_universal_binary}" ]]; then
 				# If building on an Apple Silicon Mac, the "Create Alternate App Binaries for Mac Univeral Binary.sh" script (within the "Build Scripts" folder)
-				# can be run in Rosetta on to obtain the necessary Intel files which can be copied into the "Java [VERSION] Intel App Binaries" folder.
+				# can be run here via Rosetta to obtain the necessary Intel files which will be created in the "Java [VERSION] Intel App Binaries" folder.
 				# This is necessary to be able to manually create a Universal app since that capability is not built-in to "jpackage".
 
+				arch -x86_64 bash "${PROJECT_PATH}/Build Scripts/Create Alternate App Binaries for Mac Univeral Binary.sh" --no-reveal
+			fi
+
+			if [[ -d "${alternate_app_binaries_for_universal_binary}" ]]; then
 				while IFS='' read -rd '' this_app_file_path; do
 					if [[ "$(file "${this_app_file_path}")" == *'Mach-O 64-bit'* ]]; then
 						this_alternate_app_binaries_for_universal_binary_file_path="${alternate_app_binaries_for_universal_binary}${this_app_file_path#*/dist/QA Helper.app}"
@@ -184,10 +233,14 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 
 							if [[ " ${this_app_file_arch} " != *" ${this_alternate_app_binaries_for_universal_binary_file_arch} "* ]]; then
 								echo "  Adding \"${this_alternate_app_binaries_for_universal_binary_file_arch}\" to \"${this_app_file_arch}\" Binary File to Make Universal: ${this_app_file_path#*/dist/}"
+								if [[ -x "${this_app_file_path}" && ! -x "${this_alternate_app_binaries_for_universal_binary_file_path}" ]]; then
+									chmod +x "${this_alternate_app_binaries_for_universal_binary_file_path}"
+								fi
+
 								if ! lipo -create "${this_app_file_path}" "${this_alternate_app_binaries_for_universal_binary_file_path}" -output "${this_app_file_path}"; then
 									>&2 echo -e '\n!!! UNIVERSAL BINARY ERROR !!!'
 									afplay '/System/Library/Sounds/Basso.aiff'
-									exit 3
+									exit 5
 								fi
 							else
 								echo "  Binary File \"${this_app_file_arch}\" Already Contains \"${this_alternate_app_binaries_for_universal_binary_file_arch}\": ${this_app_file_path}"
@@ -202,24 +255,24 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 							if [[ "${this_app_file_arch_info}" == 'Non-fat file:'* ]]; then
 								>&2 echo -e '\n!!! UNIVERSAL BINARY ERROR (NON-FAT) !!!'
 								afplay '/System/Library/Sounds/Basso.aiff'
-								exit 4
+								exit 6
 							else
 								while IFS='' read -rd ' ' this_universal_arch; do
 									if [[ -n "${this_universal_arch}" && "${this_app_file_arch_info} " != *" ${this_universal_arch} "* ]]; then
 										>&2 echo -e "\n!!! UNIVERSAL BINARY ERROR (MISSING ${this_universal_arch}) !!!"
 										afplay '/System/Library/Sounds/Basso.aiff'
-										exit 5
+										exit 7
 									fi
 								done <<< "${this_alternate_app_binaries_for_universal_binary_file_arch} ${this_app_file_arch} " # There *could* possibly be other spaces in these arch vars. NOTE: MUST include a trailing/terminating space so that the last last value doesn't get lost by the "while read" loop.
 							fi
 						elif [[ -e "${this_alternate_app_binaries_for_universal_binary_file_path}" ]]; then
 							>&2 echo -e "\n!!! UNIVERSAL BINARY ERROR (DETECTED NON-BINARY FILE IN ALTERNATE APP BINARIES FOR UNIVERSAL BINARY: ${this_alternate_app_binaries_for_universal_binary_file_path}) !!!"
 							afplay '/System/Library/Sounds/Basso.aiff'
-							exit 6
+							exit 8
 						else
 							>&2 echo -e "\n!!! UNIVERSAL BINARY ERROR (MISSING FILE IN ALTERNATE APP BINARIES FOR UNIVERSAL BINARY: ${this_alternate_app_binaries_for_universal_binary_file_path}) !!!"
 							afplay '/System/Library/Sounds/Basso.aiff'
-							exit 7
+							exit 9
 						fi
 					fi
 				done < <(find "${PROJECT_PATH}/dist/QA Helper.app" -type f -print0)
@@ -306,12 +359,12 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 		did_sign_jar_libs=false
 		rm -rf "${TMPDIR}/QA_Helper-JAR"
 		mkdir -p "${TMPDIR}/QA_Helper-JAR"
-		(cd "${TMPDIR}/QA_Helper-JAR" && "${jdk_path}/Contents/Home/bin/jar" -xf "${PROJECT_PATH}/dist/QA Helper.app/Contents/Java/QA_Helper.jar")
+		(cd "${TMPDIR}/QA_Helper-JAR" && "${this_jdk_path}/Contents/Home/bin/jar" -xf "${PROJECT_PATH}/dist/QA Helper.app/Contents/Java/QA_Helper.jar")
 
 		if [[ -f "${TMPDIR}/QA_Helper-JAR/Resources/Keyboard_Test.jar" ]]; then
 			rm -rf "${TMPDIR}/Keyboard_Test-JAR"
 			mkdir -p "${TMPDIR}/Keyboard_Test-JAR"
-			(cd "${TMPDIR}/Keyboard_Test-JAR" && "${jdk_path}/Contents/Home/bin/jar" -xf "${TMPDIR}/QA_Helper-JAR/Resources/Keyboard_Test.jar")
+			(cd "${TMPDIR}/Keyboard_Test-JAR" && "${this_jdk_path}/Contents/Home/bin/jar" -xf "${TMPDIR}/QA_Helper-JAR/Resources/Keyboard_Test.jar")
 
 			while IFS='' read -rd '' this_jar_lib_path; do
 				if lipo -archs "${this_jar_lib_path}" &> /dev/null; then  # "lipo -archs" is used to locate all compiled code since it will not all be set as executable, like the "dylib" files.
@@ -321,7 +374,7 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 				fi
 			done < <(find "${TMPDIR}/Keyboard_Test-JAR" -type f -print0)
 			if $did_sign_jar_libs; then
-				(cd "${TMPDIR}/Keyboard_Test-JAR" && "${jdk_path}/Contents/Home/bin/jar" -c -m 'META-INF/MANIFEST.MF' -f "${TMPDIR}/QA_Helper-JAR/Resources/Keyboard_Test.jar" .)
+				(cd "${TMPDIR}/Keyboard_Test-JAR" && "${this_jdk_path}/Contents/Home/bin/jar" -c -m 'META-INF/MANIFEST.MF' -f "${TMPDIR}/QA_Helper-JAR/Resources/Keyboard_Test.jar" .)
 			fi
 			rm -rf "${TMPDIR}/Keyboard_Test-JAR"
 		fi
@@ -335,7 +388,7 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 		done < <(find "${TMPDIR}/QA_Helper-JAR" -type f -print0)
 		
 		if $did_sign_jar_libs; then
-			(cd "${TMPDIR}/QA_Helper-JAR" && "${jdk_path}/Contents/Home/bin/jar" -c -m 'META-INF/MANIFEST.MF' -f "${PROJECT_PATH}/dist/QA Helper.app/Contents/Java/QA_Helper.jar" .)
+			(cd "${TMPDIR}/QA_Helper-JAR" && "${this_jdk_path}/Contents/Home/bin/jar" -c -m 'META-INF/MANIFEST.MF' -f "${PROJECT_PATH}/dist/QA Helper.app/Contents/Java/QA_Helper.jar" .)
 		fi
 		rm -rf "${TMPDIR}/QA_Helper-JAR"
 
@@ -344,7 +397,7 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 
 		rm -f "${codesign_entitlements_plist_path}"
 
-		if $should_notarize && osascript -e 'activate' -e "display alert \"Notarize QA Helper version ${app_version_and_type_display}?\" buttons {\"No\", \"Yes\"} cancel button 1 default button 2" &> /dev/null; then
+		if $should_notarize && osascript -e 'activate' -e "display dialog \"Notarize QA Helper\nversion ${app_version_and_type_display}?\" buttons {\"No\", \"Yes\"} cancel button 1 default button 2 with title \"Notarize QA Helper\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
 			# Setting up "notarytool": https://scriptingosx.com/2021/07/notarize-a-command-line-tool-with-notarytool/ & https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/customizing_the_notarization_workflow
 
 			qa_helper_mac_zip_path_for_notarization="${PROJECT_PATH}/dist/${qa_helper_mac_zip_name/.zip/-NOTARIZATION-SUBMISSION.zip}"
@@ -369,7 +422,7 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 
 			if (( notarytool_exit_code != 0 )); then
 				>&2 echo -e "\nNOTARIZATION ERROR OCCURRED: EXIT CODE ${notarytool_exit_code} (ALSO SEE ERROR MESSAGES ABOVE)"
-				exit 8
+				exit 10
 			fi
 
 			echo -e "\nStapling Notarization Ticket to QA Helper Version ${app_version_and_type_display}..."
@@ -378,7 +431,7 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 
 			if (( stapler_exit_code != 0 )); then
 				>&2 echo -e "\nSTAPLING ERROR OCCURRED: EXIT CODE ${stapler_exit_code} (ALSO SEE ERROR MESSAGES ABOVE)"
-				exit 9
+				exit 11
 			fi
 
 			echo -e "\nAssessing Notarized QA Helper Version ${app_version_and_type_display}..."
@@ -396,7 +449,7 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 				# The "--deep" option is DEPRECATED in macOS 13 Ventura for SIGNING but I don't think it's deprecated for VERIFYING since verification is where it was always really intended to be used (as explained in the note in the last link in the list above).
 
 				>&2 echo -e "\nASSESSMENT ERROR OCCURRED: EXIT CODE ${spctl_assess_exit_code} (ALSO SEE ERROR MESSAGES ABOVE)"
-				exit 10
+				exit 12
 			fi
 
 			echo -e "\nZipping Notarized QA Helper Version ${app_version_and_type_display}..."
@@ -407,16 +460,18 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 				ditto "${PROJECT_PATH}/dist/${qa_helper_mac_zip_name}" "${fgMIB_USERAPPS_PATH}"
 			fi
 
+			open -R "${PROJECT_PATH}/dist/${qa_helper_mac_zip_name}"
+
 			echo -e "\nSuccessfully Notarized QA Helper Version ${app_version_and_type_display}!"
 
-			osascript -e 'activate' -e "display alert \"Successfully Notarized & Zipped\nQA Helper Version ${app_version_and_type_display}!\"" &> /dev/null
+			osascript -e 'activate' -e "display dialog \"Successfully Notarized & Zipped\nQA Helper Version ${app_version_and_type_display}!\" with title \"Successfully Notarized QA Helper\" buttons {\"OK\"} default button 1 with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null
 		fi
 
 		open -na "${PROJECT_PATH}/dist/QA Helper.app"
 
 		if [[ "${app_version}" == *'-0' ]]; then # DO NOT offer to build for El Captian for testing builds (which have versions ending in "-0").
 			break
-		elif [[ "${qa_helper_mac_zip_name}" == 'QAHelper-mac-universal.zip' ]] && osascript -e 'activate' -e "display alert \"Also build QA Helper version ${app_version} for El Capitan?\" buttons {\"Yes\", \"No\"} cancel button 1 default button 2" &> /dev/null; then
+		elif [[ "${qa_helper_mac_zip_name}" == 'QAHelper-mac-universal.zip' ]] && osascript -e 'activate' -e "display dialog \"Also build QA Helper version ${app_version}\nfor El Capitan?\" buttons {\"Yes\", \"No\"} cancel button 1 default button 2 with title \"Build QA Helper for El Capitan\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
 			break
 		fi
 	done

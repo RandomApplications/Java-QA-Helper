@@ -24,9 +24,12 @@
 # If you are building on an Apple Silicon Mac, run this string under Rosetta using "arch -x86_64 bash script.sh" (or on an Intel Mac) to get the binaries needed to make a Universal Binary.
 
 # AFTER YOU CREATE THE ALTERNATE APP BINARIES, COPY THAT STRIPPED APP BINARIES TO THE FOLLOWING FOLDER ON THE BUILD MAC:
-# [PROJECT FOLDER]/macOS Build Resources/Universal Binary Parts/Java [JAVA VERSION] [ALTERNATE ARCHITECTURE] App Binaries
+# /Users/Shared/Mac Deployment/QA Helper Universal Binary Parts/Java [JAVA VERSION] [ALTERNATE ARCHITECTURE] App Binaries
 
 PATH='/usr/bin:/bin:/usr/sbin:/sbin'
+
+PROJECT_PATH="$(cd "${BASH_SOURCE[0]%/*}/.." &> /dev/null && pwd -P)"
+readonly PROJECT_PATH
 
 TMPDIR="$([[ -d "${TMPDIR}" && -w "${TMPDIR}" ]] && echo "${TMPDIR%/}" || echo '/private/tmp')" # Make sure "TMPDIR" is always set and that it DOES NOT have a trailing slash for consistency regardless of the current environment.
 
@@ -35,65 +38,92 @@ is_apple_silicon="$([[ "$(arch)" == 'arm'* ]] && echo 'true' || echo 'false')" #
 script_title="CREATING $($is_apple_silicon && echo 'APPLE SILICON' || echo 'INTEL') BINARIES TO CREATE UNIVERSAL BINARY WHEN BUILDING ON $($is_apple_silicon && echo 'INTEL' || echo 'APPLE SILICON')"
 echo "${script_title}"
 
-temp_folder_path="${TMPDIR}/qa-helper-$($is_apple_silicon && echo 'apple-silicon' || echo 'intel')-mac-app-java-binaries"
+univeral_binary_parts_base_path='/Users/Shared/Mac Deployment/QA Helper Universal Binary Parts'
+if [[ ! -d "${univeral_binary_parts_base_path}" ]]; then
+	mkdir -p "${univeral_binary_parts_base_path}"
+fi
 
-rm -rf "${temp_folder_path}"
-mkdir -p "${temp_folder_path}"
-open "${temp_folder_path}"
+jdk_major_version='21'
 
-jdk_download_url="$(curl -m 5 -sfw '%{redirect_url}' "https://api.adoptium.net/v3/binary/latest/21/ga/mac/$($is_apple_silicon && echo 'aarch64' || echo 'x64')/jdk/hotspot/normal/eclipse")"
+rm -rf "${univeral_binary_parts_base_path}/Java ${jdk_major_version}."*
+
+jdk_full_version="$(osascript -l 'JavaScript' -e 'run = argv => JSON.parse(argv[0])[0].version_data.openjdk_version' -- "$(curl -m 5 -sf "https://api.adoptium.net/v3/assets/feature_releases/${jdk_major_version}/ga")" 2> /dev/null)"
+jdk_full_version="${jdk_full_version%-LTS}"
+
+if [[ -z "${jdk_full_version}" ]]; then
+	>&2 echo -e "\n!!! FAILED TO RETRIEVE LATEST FULL VERSION FOR JDK ${jdk_major_version} !!!"
+	afplay '/System/Library/Sounds/Basso.aiff'
+	exit 1
+fi
+
+alternate_app_binaries_for_universal_binary_name="Java ${jdk_full_version} $($is_apple_silicon && echo 'Apple Silicon' || echo 'Intel') App Binaries"
+alternate_app_binaries_for_universal_binary_path="${univeral_binary_parts_base_path}/${alternate_app_binaries_for_universal_binary_name}"
+mkdir -p "${alternate_app_binaries_for_universal_binary_path}"
+
+if [[ $1 != '--no-reveal' ]]; then
+	open -R "${alternate_app_binaries_for_universal_binary_path}"
+fi
+
+jdk_download_url="$(curl -m 5 -sfw '%{redirect_url}' "https://api.adoptium.net/v3/binary/latest/${jdk_major_version}/ga/mac/$($is_apple_silicon && echo 'aarch64' || echo 'x64')/jdk/hotspot/normal/eclipse")"
 jdk_archive_filename="${jdk_download_url##*/}"
 echo -e "\nDOWNLOADING \"${jdk_download_url}\"..."
-curl --connect-timeout 5 --progress-bar -fL "${jdk_download_url}" -o "${temp_folder_path}/${jdk_archive_filename}" || exit 1
+rm -rf "${TMPDIR:?}/${jdk_archive_filename}"
+curl --connect-timeout 5 --progress-bar -fL "${jdk_download_url}" -o "${TMPDIR}/${jdk_archive_filename}" || exit 1
 
 echo -e "\nUNARCHIVING \"${jdk_archive_filename}\"..."
-tar -xzf "${temp_folder_path}/${jdk_archive_filename}" -C "${temp_folder_path}" || exit 1
-rm -f "${temp_folder_path}/${jdk_archive_filename}"
+tar -xzf "${TMPDIR}/${jdk_archive_filename}" -C "${alternate_app_binaries_for_universal_binary_path}" || exit 1
+rm -f "${TMPDIR}/${jdk_archive_filename}"
 
-qa_helper_jar_download_url='https://apps.freegeek.org/qa-helper/download/QAHelper-jar.zip'
-echo -e "\nDOWNLOADING \"${qa_helper_jar_download_url}\"..."
-curl --connect-timeout 5 --progress-bar -fL "${qa_helper_jar_download_url}" -o "${temp_folder_path}/QAHelper-jar.zip" || exit 1
+if [[ -f "${PROJECT_PATH}/dist/QA_Helper.jar" ]]; then
+	echo -e '\nCOPYING "QA_Helper.jar"...'
+	ditto "${PROJECT_PATH}/dist/QA_Helper.jar" "${alternate_app_binaries_for_universal_binary_path}/QA Helper JAR/QA_Helper.jar" || exit 1
+else
+	qa_helper_jar_download_url='https://apps.freegeek.org/qa-helper/download/QAHelper-jar.zip'
+	echo -e "\nDOWNLOADING \"${qa_helper_jar_download_url}\"..."
+	rm -rf "${TMPDIR}/QAHelper-jar.zip"
+	curl --connect-timeout 5 --progress-bar -fL "${qa_helper_jar_download_url}" -o "${TMPDIR}/QAHelper-jar.zip" || exit 1
 
-echo -e '\nUNARCHIVING "QAHelper-jar.zip"...'
-ditto -xk --noqtn "${temp_folder_path}/QAHelper-jar.zip" "${temp_folder_path}/QA Helper JAR" || exit 1
-rm -f "${temp_folder_path}/QAHelper-jar.zip"
+	echo -e '\nUNARCHIVING "QAHelper-jar.zip"...'
+	ditto -xk --noqtn "${TMPDIR}/QAHelper-jar.zip" "${alternate_app_binaries_for_universal_binary_path}/QA Helper JAR" || exit 1
+	rm -f "${TMPDIR}/QAHelper-jar.zip"
+fi
 
-# Suppress ShellCheck suggestion to not use "ls | grep" since we need "ls -t" to sort by modification date, and this path shouldn't contain non-alphanumeric characters.
-# shellcheck disable=SC2010
-jdk_path="${temp_folder_path}/$(ls -t "${temp_folder_path}" | grep -xm 1 'jdk-.*')"
+jdk_path="${alternate_app_binaries_for_universal_binary_path}/jdk-${jdk_full_version}"
 
 echo -e '\nCREATING APP...'
 "${jdk_path}/Contents/Home/bin/jpackage" \
 	--type 'app-image' \
 	--verbose \
 	--name 'QA Helper' \
-	--input "${temp_folder_path}/QA Helper JAR" \
+	--input "${alternate_app_binaries_for_universal_binary_path}/QA Helper JAR" \
 	--main-jar 'QA_Helper.jar' \
 	--runtime-image "${jdk_path}" \
-	--dest "${temp_folder_path}" || exit 1
+	--dest "${alternate_app_binaries_for_universal_binary_path}" || exit 1
 
 # Move "runtime" to "Frameworks/Java.runtime" to match actual QA Helper structure changes.
-mkdir "${temp_folder_path}/QA Helper.app/Contents/Frameworks"
-mv "${temp_folder_path}/QA Helper.app/Contents/runtime" "${temp_folder_path}/QA Helper.app/Contents/Frameworks/Java.runtime"
+mkdir "${alternate_app_binaries_for_universal_binary_path}/QA Helper.app/Contents/Frameworks"
+mv "${alternate_app_binaries_for_universal_binary_path}/QA Helper.app/Contents/runtime" "${alternate_app_binaries_for_universal_binary_path}/QA Helper.app/Contents/Frameworks/Java.runtime"
 
 echo -e '\nREMOVING ALL EXCEPT BINARIES FROM APP...'
 
 while IFS='' read -rd '' this_app_file_path; do
 	if [[ "$(file "${this_app_file_path}")" != *'Mach-O 64-bit'* ]]; then
-		echo "Deleting Non-Binary File (and Empty Parent Folders) From App: ${this_app_file_path/${temp_folder_path}\//}"
+		echo "Deleting Non-Binary File (and Empty Parent Folders) From App: ${this_app_file_path/${alternate_app_binaries_for_universal_binary_path}\//}"
 		if rm -f "${this_app_file_path}"; then
 			rmdir -p "${this_app_file_path%/*}" 2> /dev/null
 		else
 			exit 1
 		fi
 	fi
-done < <(find "${temp_folder_path}/QA Helper.app" -type f -print0)
+done < <(find "${alternate_app_binaries_for_universal_binary_path}/QA Helper.app" -type f -print0)
 
-touch "${temp_folder_path}/QA Helper.app"
+touch "${alternate_app_binaries_for_universal_binary_path}/QA Helper.app"
 
-rm -rf "${temp_folder_path}/QA Helper JAR"
+rm -rf "${alternate_app_binaries_for_universal_binary_path}/QA Helper JAR"
 rm -rf "${jdk_path}"
 
-open -R "${temp_folder_path}/QA Helper.app"
+if [[ $1 != '--no-reveal' ]]; then
+	open -R "${alternate_app_binaries_for_universal_binary_path}/QA Helper.app"
+fi
 
 echo -e "\nDONE ${script_title}\n"

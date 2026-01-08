@@ -60,29 +60,37 @@ NetBeans version ${INSTALLED_NETBEANS_VERSION} is currently installed.\" buttons
 
 
 		echo -e '\nChecking for JDK Update...'
-		# Suppress ShellCheck suggestion to use "find" instead of "ls" since we need "ls -t" to sort by modification date, and this path shouldn't contain non-alphanumeric characters.
-		# shellcheck disable=SC2012
-		INSTALLED_JDK_VERSION="$(ls -t '/Library/Java/JavaVirtualMachines/' | awk -F '-|[.]jdk' '{ print $(NF-1); exit }')"
-		readonly INSTALLED_JDK_VERSION
-		echo "  Installed JDK Version: ${INSTALLED_JDK_VERSION}"
+		declare -a jdk_versions_and_paths=()
+		while IFS='' read -rd '' this_jdk_java_binary; do
+			this_jdk_version="$("${this_jdk_java_binary}" --version 2>&1 | awk -F '[( )]' '($(NF-2) == "build") { print $(NF-1) }')"
+			this_jdk_version="${this_jdk_version%%-*}"
+			jdk_versions_and_paths+=( "${this_jdk_version}:${this_jdk_java_binary/\/Contents\/Home\/bin\/java/}" )
+		done < <(find '/Library/Java/JavaVirtualMachines/' -type f -perm +111 -name 'java' -print0)
+		installed_latest_jdk_version_and_path="$(printf '%s\n' "${jdk_versions_and_paths[@]}" | sort -rV | head -1)"
 
-		LATEST_JDK_VERSION="$(osascript -l 'JavaScript' -e 'run = argv => JSON.parse(argv[0])[0].version_data.openjdk_version' -- "$(curl -m 5 -sf 'https://api.adoptium.net/v3/assets/feature_releases/21/ga')" 2> /dev/null)"
-		LATEST_JDK_VERSION="${LATEST_JDK_VERSION%-LTS}"
-		readonly LATEST_JDK_VERSION
+		readonly INSTALLED_JDK_VERSION="${installed_latest_jdk_version_and_path%%:*}"
+		if [[ -n "${INSTALLED_JDK_VERSION}" ]]; then
+			readonly INSTALLED_JDK_MAJOR_VERSION="${INSTALLED_JDK_VERSION%%.*}"
+			echo "  Installed JDK Version: ${INSTALLED_JDK_VERSION}"
 
-		if [[ -n "${LATEST_JDK_VERSION}" ]]; then
-			echo "     Latest JDK Version: ${LATEST_JDK_VERSION}"
+			LATEST_JDK_VERSION="$(osascript -l 'JavaScript' -e 'run = argv => JSON.parse(argv[0])[0].version_data.openjdk_version' -- "$(curl -m 5 -sf "https://api.adoptium.net/v3/assets/feature_releases/${INSTALLED_JDK_MAJOR_VERSION}/ga")" 2> /dev/null)"
+			LATEST_JDK_VERSION="${LATEST_JDK_VERSION%-LTS}"
+			readonly LATEST_JDK_VERSION
 
-			if [[ "${LATEST_JDK_VERSION}" != "${INSTALLED_JDK_VERSION}" ]]; then
-				if osascript -e "display dialog \"JDK version ${LATEST_JDK_VERSION} is now available!
+			if [[ -n "${LATEST_JDK_VERSION}" ]]; then
+				echo "     Latest JDK Version: ${LATEST_JDK_VERSION}"
 
-JDK version ${INSTALLED_JDK_VERSION} is currently installed.\" buttons {\"Continue Build with JDK ${INSTALLED_JDK_VERSION}\", \"Download JDK ${LATEST_JDK_VERSION}\"} cancel button 1 default button 2 with title \"Newer JDK Available for QA Helper\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
-					echo '  OPENING DOWNLOAD NEWER JDK LINK'
-					open "https://api.adoptium.net/v3/binary/latest/21/ga/mac/$([[ "$(sysctl -in hw.optional.arm64)" == '1' ]] && echo 'aarch64' || echo 'x64')/jdk/hotspot/normal/eclipse"
+				if [[ "${LATEST_JDK_VERSION}" != "${INSTALLED_JDK_VERSION}" ]]; then
+					osascript -e "display dialog \"JDK version ${LATEST_JDK_VERSION} is now available!
+
+JDK version ${INSTALLED_JDK_VERSION} is currently installed.\" buttons {\"Continue Build\"} default button 1 with title \"Newer JDK Available\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null
 				fi
+			else
+				echo -e '  FAILED TO GET LATEST JDK VERSION'
+				afplay /System/Library/Sounds/Basso.aiff
 			fi
 		else
-			echo -e '  FAILED TO GET LATEST JDK VERSION'
+			echo -e '  FAILED TO GET INSTALLED JDK VERSION'
 			afplay /System/Library/Sounds/Basso.aiff
 		fi
 
@@ -187,72 +195,11 @@ Apache Commons Text Libraries versions ${INSTALLED_COMMONS_TEXT_VERSION}, ${INST
 			echo '  NOT CHECKING ALL LATEST APACHE COMMONS TEXT LIBS VERSIONS BECAUSE RETRIEVING LATEST FLATLAF VERSION FROM SAME SOURCE FAILED'
 		fi
 
-		echo -e '\nChecking for SOAP Libraries Update...'
-		# Suppress ShellCheck suggestions to use "find" instead of "ls" since we need "ls -t" to sort by modification date, and this path shouldn't contain non-alphanumeric characters.
-		# shellcheck disable=SC2012
-		INSTALLED_SOAP_LIB_JAK_ACT_VERSION="$(ls -t "${PROJECT_PATH}/libs/jakarta.activation-"* | awk -F '-|[.]jar' '{ print $(NF-1); exit }')"
-		readonly INSTALLED_SOAP_LIB_JAK_ACT_VERSION
-		# shellcheck disable=SC2012
-		INSTALLED_SOAP_LIB_JAK_XML_VERSION="$(ls -t "${PROJECT_PATH}/libs/jakarta.xml.soap-api-"* | awk -F '-|[.]jar' '{ print $(NF-1); exit }')"
-		readonly INSTALLED_SOAP_LIB_JAK_XML_VERSION
-		# shellcheck disable=SC2012
-		INSTALLED_SOAP_LIB_SAJ_IMP_VERSION="$(ls -t "${PROJECT_PATH}/libs/saaj-impl-"* | awk -F '-|[.]jar' '{ print $(NF-1); exit }')"
-		readonly INSTALLED_SOAP_LIB_SAJ_IMP_VERSION
-		# shellcheck disable=SC2012
-		INSTALLED_SOAP_LIB_STX_EX_VERSION="$(ls -t "${PROJECT_PATH}/libs/stax-ex-"* | awk -F '-|[.]jar' '{ print $(NF-1); exit }')"
-		readonly INSTALLED_SOAP_LIB_STX_EX_VERSION
-		echo "  Installed SOAP Libraries Versions: ${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}, ${INSTALLED_SOAP_LIB_JAK_XML_VERSION}, ${INSTALLED_SOAP_LIB_SAJ_IMP_VERSION}, ${INSTALLED_SOAP_LIB_STX_EX_VERSION}"
-
-		if [[ -n "${LATEST_FLATLAF_VERSION}" ]]; then
-			LATEST_SOAP_LIB_JAK_ACT_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/com.sun.activation/jakarta.activation' | awk -F '/' '{ print $7; exit }')"
-			readonly LATEST_SOAP_LIB_JAK_ACT_VERSION
-			LATEST_SOAP_LIB_JAK_XML_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/jakarta.xml.soap/jakarta.xml.soap-api' | awk -F '/' '{ print $7; exit }')"
-			readonly LATEST_SOAP_LIB_JAK_XML_VERSION
-			LATEST_SOAP_LIB_SAJ_IMP_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/com.sun.xml.messaging.saaj/saaj-impl' | awk -F '/' '{ print $7; exit }')"
-			readonly LATEST_SOAP_LIB_SAJ_IMP_VERSION
-			LATEST_SOAP_LIB_STX_EX_VERSION="$(curl -m 5 --retry 2 -sfw '%{redirect_url}' -o /dev/null 'https://maven-badges.sml.io/maven-central/org.jvnet.staxex/stax-ex' | awk -F '/' '{ print $7; exit }')"
-			readonly LATEST_SOAP_LIB_STX_EX_VERSION
-
-			if [[ -n "${LATEST_SOAP_LIB_JAK_ACT_VERSION}" && -n "${LATEST_SOAP_LIB_JAK_XML_VERSION}" && -n "${LATEST_SOAP_LIB_SAJ_IMP_VERSION}" && -n "${LATEST_SOAP_LIB_STX_EX_VERSION}" ]]; then
-				echo "     Latest SOAP Libraries Versions: ${LATEST_SOAP_LIB_JAK_ACT_VERSION}, ${LATEST_SOAP_LIB_JAK_XML_VERSION}, ${LATEST_SOAP_LIB_SAJ_IMP_VERSION}, ${LATEST_SOAP_LIB_STX_EX_VERSION}"
-
-				if [[ "${LATEST_SOAP_LIB_JAK_ACT_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}" || "${LATEST_SOAP_LIB_JAK_XML_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_XML_VERSION}" ||
-					"${LATEST_SOAP_LIB_SAJ_IMP_VERSION}" != "${INSTALLED_SOAP_LIB_SAJ_IMP_VERSION}" || "${LATEST_SOAP_LIB_STX_EX_VERSION}" != "${INSTALLED_SOAP_LIB_STX_EX_VERSION}" ]]; then
-					if osascript -e "display dialog \"SOAP Libraries versions ${LATEST_SOAP_LIB_JAK_ACT_VERSION}, ${LATEST_SOAP_LIB_JAK_XML_VERSION}, ${LATEST_SOAP_LIB_SAJ_IMP_VERSION}, ${LATEST_SOAP_LIB_STX_EX_VERSION} are now available!
-
-SOAP Libraries versions ${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}, ${INSTALLED_SOAP_LIB_JAK_XML_VERSION}, ${INSTALLED_SOAP_LIB_SAJ_IMP_VERSION}, ${INSTALLED_SOAP_LIB_STX_EX_VERSION} are currently installed.\" buttons {\"Continue Build with Current SOAP Libraries\", \"Download Latest SOAP Libraries\"} cancel button 1 default button 2 with title \"Newer SOAP Libraries Available for QA Helper\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
-						echo '  OPENING DOWNLOAD NEWER SOAP LIBS LINKS'
-
-						if [[ "${LATEST_SOAP_LIB_JAK_ACT_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_ACT_VERSION}" ]]; then
-							open 'https://maven-badges.sml.io/maven-central/com.sun.activation/jakarta.activation'
-						fi
-
-						if [[ "${LATEST_SOAP_LIB_JAK_XML_VERSION}" != "${INSTALLED_SOAP_LIB_JAK_XML_VERSION}" ]]; then
-							open 'https://maven-badges.sml.io/maven-central/jakarta.xml.soap/jakarta.xml.soap-api'
-						fi
-
-						if [[ "${LATEST_SOAP_LIB_SAJ_IMP_VERSION}" != "${INSTALLED_SOAP_LIB_SAJ_IMP_VERSION}" ]]; then
-							open 'https://maven-badges.sml.io/maven-central/com.sun.xml.messaging.saaj/saaj-impl'
-						fi
-
-						if [[ "${LATEST_SOAP_LIB_STX_EX_VERSION}" != "${INSTALLED_SOAP_LIB_STX_EX_VERSION}" ]]; then
-							open 'https://maven-badges.sml.io/maven-central/org.jvnet.staxex/stax-ex'
-						fi
-					fi
-				fi
-			else
-				echo "  FAILED TO GET ALL LATEST SOAP LIBS VERSIONS (${LATEST_SOAP_LIB_JAK_ACT_VERSION:-N/A}, ${LATEST_SOAP_LIB_JAK_XML_VERSION:-N/A}, ${LATEST_SOAP_LIB_SAJ_IMP_VERSION:-N/A}, ${LATEST_SOAP_LIB_STX_EX_VERSION:-N/A})"
-				afplay /System/Library/Sounds/Basso.aiff
-			fi
-		else
-			echo '  NOT CHECKING ALL LATEST SOAP LIBS VERSIONS BECAUSE RETRIEVING LATEST FLATLAF VERSION FROM SAME SOURCE FAILED'
-		fi
-
 
 		echo -e '\nChecking for HDSentinel for Linux Update...'
 		# Suppress ShellCheck suggestion to use "find" instead of "ls" since we need "ls -t" to sort by modification date, and this path shouldn't contain non-alphanumeric characters.
 		# shellcheck disable=SC2012
-		INCLUDED_HDSENTINEL_LINUX_VERSION="$(ls -t "${PROJECT_PATH}/src/Resources/hdsentinel-"*'-x64' | awk -F '-' '{ print $2; exit }')"
+		INCLUDED_HDSENTINEL_LINUX_VERSION="$(ls -t "${PROJECT_PATH}/src/Resources/hdsentinel-"*'-x64' | awk -F '-' '{ print $(NF-1); exit }')"
 		INCLUDED_HDSENTINEL_LINUX_VERSION=${INCLUDED_HDSENTINEL_LINUX_VERSION//[^0-9]/}
 		if [[ "${INCLUDED_HDSENTINEL_LINUX_VERSION}" == '0'* ]]; then
 			INCLUDED_HDSENTINEL_LINUX_VERSION="${INCLUDED_HDSENTINEL_LINUX_VERSION/0/0.}"
@@ -279,31 +226,6 @@ HDSentinel for Linux version ${INCLUDED_HDSENTINEL_LINUX_VERSION} is currently i
 			afplay /System/Library/Sounds/Basso.aiff
 		fi
 	fi
-
-
-	# echo -e '\nDownloading Latest "emojis.json" for "emoji-json" from "Gemoji"...'
-	# rm -rf "${TMPDIR}/QA_Helper-emoji-java-JAR"
-	# mkdir -p "${TMPDIR}/QA_Helper-emoji-java-JAR"
-	# (cd "${TMPDIR}/QA_Helper-emoji-java-JAR" && jar -xf "${PROJECT_PATH}/libs/emoji-java-5.1.1.jar")
-
-	# declare -i PREVIOUS_EMOJIS_JSON_LINE_COUNT
-	# PREVIOUS_EMOJIS_JSON_LINE_COUNT="$({ wc -l "${TMPDIR}/QA_Helper-emoji-java-JAR/emojis.json" 2> /dev/null || echo '0'; } | awk '{ print $1; exit }')"
-	# readonly PREVIOUS_EMOJIS_JSON_LINE_COUNT
-
-	# curl -m 5 -sfL 'https://raw.githubusercontent.com/github/gemoji/master/db/emoji.json' -o "${TMPDIR}/QA_Helper-emoji-java-JAR/emojis.json"
-
-	# declare -i NEW_EMOJIS_JSON_LINE_COUNT
-	# NEW_EMOJIS_JSON_LINE_COUNT="$({ wc -l "${TMPDIR}/QA_Helper-emoji-java-JAR/emojis.json" 2> /dev/null || echo '0'; } | awk '{ print $1; exit }')"
-	# readonly NEW_EMOJIS_JSON_LINE_COUNT
-
-	# if (( NEW_EMOJIS_JSON_LINE_COUNT >= PREVIOUS_EMOJIS_JSON_LINE_COUNT )); then
-	# 	(cd "${TMPDIR}/QA_Helper-emoji-java-JAR" && jar -cf "${PROJECT_PATH}/libs/emoji-java-5.1.1.jar" .)
-	# 	echo '  Updated "emojis.json" within "[PROJECT FOLDER]/libs/emoji-java-5.1.1.jar"'
-	# else
-	# 	echo "  NEW emojis.json LINE COUNT NOT GREATER THAN OR EQUAL TO PREVIOUS (${NEW_EMOJIS_JSON_LINE_COUNT} < ${PREVIOUS_EMOJIS_JSON_LINE_COUNT})"
-	# 	afplay '/System/Library/Sounds/Basso.aiff'
-	# fi
-	# rm -rf "${TMPDIR}/QA_Helper-emoji-java-JAR"
 
 
 	echo -e '\nDownloading Latest PCI IDs...'

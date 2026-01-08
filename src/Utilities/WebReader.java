@@ -60,7 +60,7 @@ public class WebReader {
     }
 
     public WebReader(String url, String bearerTokenOrJsonBody) {
-        if (bearerTokenOrJsonBody.matches("^[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}$")) {
+        if (bearerTokenOrJsonBody.matches("^[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}$")) {
             initWebReader(url, null, null, bearerTokenOrJsonBody, null, null, null, 0, 0);
         } else {
             initWebReader(url, null, null, null, bearerTokenOrJsonBody, null, null, 0, 0);

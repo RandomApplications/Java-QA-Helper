@@ -73,11 +73,15 @@
     <target name="-pre-compile">
         <!-- UIScale Fixed addGaps - SO FIXED SIZED addGap()'s ARE SCALED CORRECTLY ON HiDPI LINUX -->
         <echo message="UIScaling Fixed addGaps"/>
-        <exec executable="./Build Scripts/UIScale Fixed addGaps.sh"/>
+        <exec executable="/bin/bash">
+            <arg value="./Build Scripts/UIScale Fixed addGaps.sh"/>
+        </exec>
         
         <!-- Check for Updates -->
         <echo message="Checking for Updates"/>
-        <exec executable="./Build Scripts/Check for Updates.sh"/>
+        <exec executable="/bin/bash">
+            <arg value="./Build Scripts/Check for Updates.sh"/>
+        </exec>
     </target>
     
     <target name="-post-jar">
@@ -140,6 +144,8 @@
         
         <!-- Compile jar for macOS into macOS App bundle -->
         <echo message="Compiling ${store.jar.name} into App for macOS"/>
-        <exec executable="./Build Scripts/Compile QA Helper for Mac.sh"/>
+        <exec executable="/bin/bash">
+            <arg value="./Build Scripts/Compile QA Helper for Mac.sh"/>
+        </exec>
     </target>
 </project>

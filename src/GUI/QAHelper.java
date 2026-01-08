@@ -220,6 +220,8 @@ public class QAHelper extends javax.swing.JFrame {
         final boolean isLinux = osName.startsWith("Linux");
         final boolean isWindows = osName.startsWith("Windows");
 
+        String[] osVersionParts = System.getProperty("os.version").replaceAll("[^0-9.]", "").split("\\.");
+
         if (isMacOS) {
             System.setProperty("apple.awt.application.name", "QA Helper"); // To not show "QAHelper" class name in App menu.
             System.setProperty("apple.laf.useScreenMenuBar", "true");
@@ -241,9 +243,12 @@ public class QAHelper extends javax.swing.JFrame {
             boolean osIsDarkMode = false;
 
             if (isMacOS) {
-                String[] macOSversionParts = System.getProperty("os.version").replaceAll("[^0-9.]", "").split("\\.");
-                if ((Integer.parseInt(macOSversionParts[0]) >= 11) || (Integer.parseInt(macOSversionParts[1]) >= 14)) {
-                    osIsDarkMode = new CommandReader(new String[]{"/usr/bin/defaults", "read", "NSGlobalDomain", "AppleInterfaceStyle"}).getFirstOutputLine().toLowerCase().equals("dark");
+                try {
+                    if ((Integer.parseInt(osVersionParts[0]) >= 11) || (Integer.parseInt(osVersionParts[1]) >= 14)) {
+                        osIsDarkMode = new CommandReader(new String[]{"/usr/bin/defaults", "read", "NSGlobalDomain", "AppleInterfaceStyle"}).getFirstOutputLine().toLowerCase().equals("dark");
+                    }
+                } catch (NumberFormatException parseVersionPartException) {
+                    // Ignore parseVersionPartException
                 }
             } else if (isLinux) {
                 String cinnamonGtkThemeName = new CommandReader(new String[]{"/usr/bin/gsettings", "get", "org.cinnamon.desktop.interface", "gtk-theme"}).getFirstOutputLine().toLowerCase();
@@ -284,6 +289,16 @@ public class QAHelper extends javax.swing.JFrame {
                         "Button.default.borderWidth", "Button.default.foreground", "Button.default.background", "Button.default.focusedBackground"};
                     for (String thisUIDefault : resetUIDefaults) {
                         UIManager.put(thisUIDefault, defaultLaf.getDefaults().get(thisUIDefault));
+                    }
+
+                    try {
+                        if (Integer.parseInt(osVersionParts[0]) >= 26) { // Increase the corner radius for macOS 26 Tahoe.
+                            UIManager.put("Button.arc", 14);
+                            UIManager.put("Component.arc", 14);
+                            UIManager.put("CheckBox.arc", 10);
+                        }
+                    } catch (NumberFormatException parseVersionPartException) {
+                        // Ignore parseVersionPartException
                     }
 
                     // Copying font setting technique from https://github.com/JFormDesigner/FlatLaf/blob/3a784375d087c0e19903c77eb2936400cf38712e/flatlaf-core/src/main/java/com/formdev/flatlaf/FlatLaf.java#L495
@@ -898,9 +913,13 @@ public class QAHelper extends javax.swing.JFrame {
                         boolean osIsDarkMode = false;
 
                         if (isMacOS) {
-                            String[] macOSversionParts = System.getProperty("os.version").replaceAll("[^0-9.]", "").split("\\.");
-                            if ((Integer.parseInt(macOSversionParts[0]) >= 11) || (Integer.parseInt(macOSversionParts[1]) >= 14)) {
-                                osIsDarkMode = new CommandReader(new String[]{"/usr/bin/defaults", "read", "NSGlobalDomain", "AppleInterfaceStyle"}).getFirstOutputLine().toLowerCase().equals("dark");
+                            try {
+                                String[] macOSversionParts = System.getProperty("os.version").replaceAll("[^0-9.]", "").split("\\.");
+                                if ((Integer.parseInt(macOSversionParts[0]) >= 11) || (Integer.parseInt(macOSversionParts[1]) >= 14)) {
+                                    osIsDarkMode = new CommandReader(new String[]{"/usr/bin/defaults", "read", "NSGlobalDomain", "AppleInterfaceStyle"}).getFirstOutputLine().toLowerCase().equals("dark");
+                                }
+                            } catch (NumberFormatException parseVersionPartException) {
+                                // Ignore parseVersionPartException
                             }
                         } else if (isLinux) {
                             String cinnamonGtkThemeName = new CommandReader(new String[]{"/usr/bin/gsettings", "get", "org.cinnamon.desktop.interface", "gtk-theme"}).getFirstOutputLine().toLowerCase();
@@ -1039,7 +1058,7 @@ public class QAHelper extends javax.swing.JFrame {
             logSpecsParameters.put("os", computerSpecs.getFullOS());
             logSpecsParameters.put("chassis", computerSpecs.getChassisType() + " (" + (detectedDeviceType.equals(manualDeviceType) ? detectedDeviceType : (detectedDeviceType + " / " + manualDeviceType)) + ")");
             logSpecsParameters.put("cpu", computerSpecs.getFullCPU());
-            logSpecsParameters.put("ram", computerSpecs.getFullRAM());
+            logSpecsParameters.put("ram", (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()));
             logSpecsParameters.put("battery", computerSpecs.getBatteryHealthString());
             logSpecsParameters.put("power_adapter", computerSpecs.getPowerAdapter());
             logSpecsParameters.put("storage", computerSpecs.getFullStorage());
@@ -1113,7 +1132,7 @@ public class QAHelper extends javax.swing.JFrame {
                 addToProductionLogParameters.put("brand", (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardBrand() : computerSpecs.getFullBrand()));
                 addToProductionLogParameters.put("model", (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardModel() : computerSpecs.getFullModel()));
                 addToProductionLogParameters.put("serial", (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardSerial() : computerSpecs.getFullSerial()));
-                addToProductionLogParameters.put("os", computerSpecs.getFullOS());
+                addToProductionLogParameters.put("os", ((isLinuxLiveBoot || isWindowsPE || isMacTestBoot || deviceTypeIsMotherboard) ? "N/A" : computerSpecs.getFullOS()));
                 addToProductionLogParameters.put("windows_license", windowsLicense); // "windows_license" must always be included, but the value can be empty.
 
                 addToProductLogResult = new WebReader(privateStrings.getAddToFreeGeekProductionLogURL(isTestMode), addToProductionLogParameters, 15).getOutputLinesAsString();
@@ -1230,12 +1249,12 @@ public class QAHelper extends javax.swing.JFrame {
                         }
                     }
 
-                    String locationInfo = new WebReader(privateStrings.getFreeGeekAPI("location", isTestMode)).getFirstOutputLine();
+                    String locationInfo = new WebReader(privateStrings.getFreeGeekAPIurl("location", isTestMode)).getFirstOutputLine();
                     if (locationInfo.isEmpty()) {
                         locationInfo = "UNKNOWN CITY,UNKNOWN STATE";
                     }
 
-                    String remoteIP = new WebReader(privateStrings.getFreeGeekAPI("ip", isTestMode)).getFirstOutputLine();
+                    String remoteIP = new WebReader(privateStrings.getFreeGeekAPIurl("ip", isTestMode)).getFirstOutputLine();
                     if (remoteIP.isEmpty()) {
                         remoteIP = "UNKNOWN IP";
                     }
@@ -1253,7 +1272,7 @@ public class QAHelper extends javax.swing.JFrame {
                             + "<b>Serial:</b> " + ((computerSpecs != null) ? escapeSingleLineSpecStringForHTML((deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardSerial() : computerSpecs.getFullSerial())) : "Specs Not Loaded") + "<br/><br/>"
                             + "<b>ID:</b> " + (emailPID.equals("N/A") ? "N/A" : ("<a href=\"" + privateStrings.getFreeGeekSpecsURL(emailPID, isTestMode) + "\" target=\"_blank\">" + emailPID + "</a>")) + (isTestMode ? " (Test Mode)" : "") + "<br/>"
                             + "<b>User:</b> " + username + (isIntern ? " (Intern)" : "") + "<br/>"
-                            + "<b>Email:</b> " + (loggedInUserInfo.containsKey("email") ? loggedInUserInfo.get("email") : "N/A") + "<br/>"
+                            + "<b>Email:</b> " + (loggedInUserInfo.containsKey("userEmail") ? loggedInUserInfo.get("userEmail") : "N/A") + "<br/>"
                             + "<b>Location:</b> " + locationInfo.replace(",", ", ") + "<br/>"
                             + "<b>IP:</b> " + remoteIP + "<br/>"
                             + "<b>System Time:</b> " + new SimpleDateFormat("MM/dd/yyyy h:mm:ss a z").format(new Date()) + "<br/><br/>"
@@ -1267,7 +1286,7 @@ public class QAHelper extends javax.swing.JFrame {
                     sendEmailParameters.put("subject", "QA Helper " + emailType);
                     sendEmailParameters.put("body", fullEmailMessage);
 
-                    String sendEmailResult = new WebReader(privateStrings.getFreeGeekAPI("email", isTestMode), sendEmailParameters).getOutputLinesAsString();
+                    String sendEmailResult = new WebReader(privateStrings.getFreeGeekAPIurl("email", isTestMode), sendEmailParameters).getOutputLinesAsString();
                     //System.out.println("sendEmailResult: " + sendEmailResult); // DEBUG
                 } catch (Exception sendEmailException) {
                     if (isTestMode) {
@@ -1361,7 +1380,7 @@ public class QAHelper extends javax.swing.JFrame {
                                                 bufferedWriter.write(
                                                         "--data-urlencode \"serial=" + (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardSerial() : computerSpecs.getFullSerial()) + "\" \\" + "\n"
                                                         + "--data-urlencode \"cpu=" + computerSpecs.getFullCPU() + "\" \\" + "\n"
-                                                        + "--data-urlencode \"ram=" + computerSpecs.getFullRAM() + "\" \\" + "\n"
+                                                        + "--data-urlencode \"ram=" + (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()) + "\" \\" + "\n"
                                                 );
                                             } catch (IOException logSpecsForInstallTimingLogException) {
                                                 if (isTestMode) {
@@ -1524,7 +1543,7 @@ public class QAHelper extends javax.swing.JFrame {
                             @Override
                             protected void done() {
                                 if (wasFirstLoad && (isLinuxUbiquityMode || isWindowsPE)) {
-                                    List<String> allowedJavaVersions = Arrays.asList("21.0.8");
+                                    List<String> allowedJavaVersions = Arrays.asList("25.0.1");
                                     String runningJavaVersion = System.getProperty("java.version");
                                     if (!allowedJavaVersions.contains(runningJavaVersion)) {
                                         playAlertSound("error");
@@ -2347,7 +2366,7 @@ public class QAHelper extends javax.swing.JFrame {
     }
 
     public void createWindowsDriversCacheModelNameFile() {
-        if (isWindows && !isPeripheralTestMode) {
+        if (isWindows && !isPeripheralTestMode && (computerSpecs != null)) {
             createHelperLogFile();
 
             File oldDriversCacheModelPathFile = new File(windowsBuildInfoPath + "Drivers Cache Model Path.txt");
@@ -2556,6 +2575,10 @@ public class QAHelper extends javax.swing.JFrame {
                 btnCheckPID.setForeground(linkColor);
             }
 
+            lblUsername.setFont(defaultFont.deriveFont(Font.BOLD));
+            lblPassword.setFont(defaultFont.deriveFont(Font.BOLD));
+            lblPID.setFont(defaultFont.deriveFont(Font.BOLD));
+
             btnForgot.setFont(defaultFont);
             btnCheckPID.setFont(defaultFont);
 
@@ -2589,6 +2612,7 @@ public class QAHelper extends javax.swing.JFrame {
         boolean hasDiscDrive = false;
         boolean hasCamera = false;
         boolean possibleCustomDesktopOrBareMotherboard = false;
+        boolean brandIsApple = false;
 
         if (computerSpecs != null) {
             detectedDeviceType = (computerSpecs.isLaptop() ? "Laptop" : (computerSpecs.hasScreen() ? "All-in-One" : "Desktop"));
@@ -2600,6 +2624,7 @@ public class QAHelper extends javax.swing.JFrame {
             hasDiscDrive = !computerSpecs.getDiscDriveArray().isEmpty();
             hasCamera = computerSpecs.hasCamera();
             possibleCustomDesktopOrBareMotherboard = computerSpecs.getPossibleCustomDesktopOrBareMotherboard();
+            brandIsApple = computerSpecs.getFullBrand().equals("Apple");
         }
 
         deviceTypeIsLaptop = false;
@@ -2645,7 +2670,7 @@ public class QAHelper extends javax.swing.JFrame {
             menDeviceTypeMotherboard.setText(menDeviceTypeMotherboardText);
         }
 
-        boolean shouldShowDeviceTypeMenu = (!hideLoginAndTasks && (manuallySetDeviceType || isTestMode || !computerSpecs.getFullBrand().equals("Apple")));
+        boolean shouldShowDeviceTypeMenu = (!hideLoginAndTasks && !isPeripheralTestMode && (manuallySetDeviceType || isTestMode || !brandIsApple));
         if (shouldShowDeviceTypeMenu != deviceTypeMenu.isVisible()) {
             deviceTypeMenu.setEnabled(shouldShowDeviceTypeMenu);
             deviceTypeMenu.setVisible(shouldShowDeviceTypeMenu);
@@ -2659,7 +2684,7 @@ public class QAHelper extends javax.swing.JFrame {
             menSetProductType.setText((pid.startsWith("FG") ? "Prompt" : "Open Inventory Manager on PCsCRM.com") + " to Set Product Type");
         }
 
-        boolean shouldShowTestMenu = (!deviceTypeIsLaptop);
+        boolean shouldShowTestMenu = (!deviceTypeIsLaptop && !isPeripheralTestMode);
         menForceShowAllTests.setSelected(forceShowAllTests);
         if (shouldShowTestMenu != testsMenu.isVisible()) {
             testsMenu.setEnabled(shouldShowTestMenu);
@@ -2909,7 +2934,7 @@ public class QAHelper extends javax.swing.JFrame {
             JLabel[] allLabels = new JLabel[]{
                 lblModelLabel, lblModel, lblSerial,
                 lblCPULabel, lblCPU,
-                lblRAMLabel, lblRAM, lblBatteryCapacity,
+                lblRAMLabel, lblRAM, lblBatteryHealth,
                 lblStorageLabel, lblStorage,
                 lblDiscDriveLabel, lblDiscDrive,
                 lblWirelessLabel, lblWireless,
@@ -2942,7 +2967,12 @@ public class QAHelper extends javax.swing.JFrame {
             btnCheckPorts.setVisible(shouldShowStressCPUandTasks);
 
             btnVerifyPorts.setVisible(shouldShowStressCPUandTasks);
-            btnVerifyPorts.setVisible(shouldShowStressCPUandTasks);
+        }
+
+        // Do not allow Ports Verification in Preinstallation Environment because plugging in an external monitor in Ubiquity on Linux Mint 22.2 may freeze the system or make the mouse not work, so just always suggest doing the test in the full OS.
+        boolean shouldEnableVerifyPorts = (shouldShowStressCPUandTasks && !isLinuxUbiquityMode && !isWindowsPE);
+        if (shouldEnableVerifyPorts != btnVerifyPorts.isEnabled()) {
+            btnVerifyPorts.setEnabled(shouldEnableVerifyPorts);
         }
 
         if (!isLinux) {
@@ -3318,11 +3348,7 @@ public class QAHelper extends javax.swing.JFrame {
             System.out.println("Update Verify Buttons in Display Computer Specs MS: " + (finishVerifyInDisplayComputerSpecsTime - finishUpdatingVisibilityInDisplayComputerSpecsTime));
         }
 
-        String modelLabelText = "<html><b>Model:</b></html>";
-        if (!manualDeviceType.isEmpty()) {
-            modelLabelText = "<html><b>" + manualDeviceType + ":</b></html>";
-        }
-
+        String modelLabelText = "<html><b>" + (manualDeviceType.isEmpty() ? "Model" : manualDeviceType) + ":</b></html>";
         if (!lblModelLabel.getText().equals(modelLabelText)) {
             lblModelLabel.setText(modelLabelText);
         }
@@ -3433,8 +3459,8 @@ public class QAHelper extends javax.swing.JFrame {
             }
 
             // RAM
-            String lblRAMtext = computerSpecs.getRAM();
-            String lblRAMtoolTipText = escapeSingleLineSpecStringForHTML(computerSpecs.getFullRAM()).replace(" - ", "<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Note:</b> ");
+            String lblRAMtext = (deviceTypeIsMotherboard ? computerSpecs.getMotherboardRAM() : computerSpecs.getRAM());
+            String lblRAMtoolTipText = escapeSingleLineSpecStringForHTML(deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()).replace(" - ", "<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Note:</b> ");
             Color lblRAMcolor = defaultColor;
 
             if (lblRAMtext.equals("N/A")) {
@@ -3485,15 +3511,25 @@ public class QAHelper extends javax.swing.JFrame {
                 lblBatteryToolTipText = "<html><b>Battery Health:</b><br/>" + lblBatteryToolTipText + "<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Battery Health Warning:</b> " + (batteryHealthWarningString.isEmpty() ? "None" : batteryHealthWarningString) + "<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Battery Health Error:</b> " + (batteryHealthErrorString.isEmpty() ? "None" : batteryHealthErrorString) + (!computerSpecs.getPowerAdapter().isEmpty() ? "<br/><br/><b>Power Adapter:</b><br/>" + escapeSingleLineSpecStringForHTML(computerSpecs.getPowerAdapter()) : "") + toolTipFooter;
                 lblBatteryColor = ((!batteryHealthErrorString.isEmpty() || lblBatteryText.equals("N/A")) ? errorColor : (!batteryHealthWarningString.isEmpty() ? warningColor : lblBatteryColor));
 
-                if (computerSpecs.getBatteryHealthWarningArray().contains("Possibly Recalled")) {
+                ArrayList<String> batteryHealthWarningArray = computerSpecs.getBatteryHealthWarningArray();
+                ArrayList<String> batteryHealthErrorArray = computerSpecs.getBatteryHealthErrorArray();
+
+                if (batteryHealthWarningArray.contains("Possibly Recalled")) {
                     lblBatteryText += " - <b>POSSIBLY RECALLED</b>";
                 }
 
-                if (computerSpecs.getBatteryHealthWarningArray().contains("Not Charging")) {
+                if (batteryHealthWarningArray.contains("Not Charging")) {
                     lblBatteryText += " - <b>NOT CHARGING</b>";
+
+                    if (!batteryHealthErrorArray.contains("No Power")) {
+                        lblBatteryText += " - <i>Check Power Adapter Wattage</i>";
+                    }
                 }
 
-                ArrayList<String> batteryHealthErrorArray = computerSpecs.getBatteryHealthErrorArray();
+                if (batteryHealthWarningArray.contains("HP Firmware Update Required for Accurate Battery Percentage")) {
+                    lblBatteryText += " - <i>Update HP Firmware</i>";
+                }
+
                 for (String thisBatteryHealthError : batteryHealthErrorArray) {
                     if (thisBatteryHealthError.startsWith("Condition ")) {
                         lblBatteryText += " - <b>" + escapeSingleLineSpecStringForHTML(thisBatteryHealthError.toUpperCase()) + "</b>";
@@ -3507,24 +3543,24 @@ public class QAHelper extends javax.swing.JFrame {
                         lblBatteryColorHTML = "<span style='color: " + (lblBatteryColor.equals(errorColor) ? errorColorHTML : warningColorHTML) + "'>";
                         lblBatteryText = lblBatteryText + "</span>";
 
-                        if (!lblBatteryCapacity.getForeground().equals(defaultColor)) {
-                            lblBatteryCapacity.setForeground(defaultColor);
+                        if (!lblBatteryHealth.getForeground().equals(defaultColor)) {
+                            lblBatteryHealth.setForeground(defaultColor);
                         }
                     }
 
                     lblBatteryText += "&nbsp;&nbsp;&nbsp;<b>Power Adapter:</b> " + escapeSingleLineSpecStringForHTML(computerSpecs.getPowerAdapter());
-                } else if (!lblBatteryCapacity.getForeground().equals(lblBatteryColor)) {
-                    lblBatteryCapacity.setForeground(lblBatteryColor);
+                } else if (!lblBatteryHealth.getForeground().equals(lblBatteryColor)) {
+                    lblBatteryHealth.setForeground(lblBatteryColor);
                 }
 
-                if ((lblBatteryCapacity.getToolTipText() == null) || !lblBatteryCapacity.getToolTipText().equals(lblBatteryToolTipText)) {
-                    lblBatteryCapacity.setText("<html>" + lblBatteryColorHTML + "<b>Battery Health:</b> " + lblBatteryText + "</html>");
-                    lblBatteryCapacity.setToolTipText(lblBatteryToolTipText);
+                if ((lblBatteryHealth.getToolTipText() == null) || !lblBatteryHealth.getToolTipText().equals(lblBatteryToolTipText)) {
+                    lblBatteryHealth.setText("<html>" + lblBatteryColorHTML + "<b>Battery Health:</b> " + lblBatteryText + "</html>");
+                    lblBatteryHealth.setToolTipText(lblBatteryToolTipText);
                 }
             }
 
-            if (hasBattery != lblBatteryCapacity.isVisible()) {
-                lblBatteryCapacity.setVisible(hasBattery);
+            if (hasBattery != lblBatteryHealth.isVisible()) {
+                lblBatteryHealth.setVisible(hasBattery);
             }
 
             // STORAGE
@@ -3546,16 +3582,21 @@ public class QAHelper extends javax.swing.JFrame {
                 if (computerSpecs.getDriveHealthWarning() || computerSpecs.getDriveTrimWarning() || computerSpecs.getDriveRecalled() || !disksFormattedWithoutPartitionTable.isEmpty()) {
                     lblStorageColor = warningColor;
 
-                    if (computerSpecs.getDriveRecalled()) {
-                        // This is currently only set for some Macs
-                        lblStorageText += " - <b>POSSIBLY RECALLED</b>";
-                        lblStorageToolTipText += "<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Note:</b> POSSIBLY RECALLED";
+                    if (computerSpecs.getDriveHealthWarning()) {
+                        lblStorageText += (" - <b>" + (isLinux ? "HDSENTINEL HEALTH WARNING" : "SMART STATUS WARNING") + "</b>");
+                        lblStorageToolTipText += ("<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Note:</b> " + (isLinux ? "HDSENTINEL HEALTH WARNING" : "SMART STATUS WARNING"));
                     }
 
                     if (computerSpecs.getDriveTrimWarning()) {
                         // This is currently only set on Mac
                         lblStorageText += " - <b>TRIM NOT ENABLED</b>";
                         lblStorageToolTipText += "<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Note:</b> TRIM NOT ENABLED";
+                    }
+
+                    if (computerSpecs.getDriveRecalled()) {
+                        // This is currently only set for some Macs
+                        lblStorageText += " - <b>POSSIBLY RECALLED</b>";
+                        lblStorageToolTipText += "<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Note:</b> POSSIBLY RECALLED";
                     }
 
                     if (!disksFormattedWithoutPartitionTable.isEmpty()) {
@@ -3679,7 +3720,7 @@ public class QAHelper extends javax.swing.JFrame {
 
             if (lblWirelessText.equals("N/A")) {
                 if (isWindowsPE) {
-                    lblWirelessColor = warningColor;
+                    lblWirelessColor = attentionColor;
 
                     String wirelessWinPEnote = "<i>Not Detected in Windows Preinstallation Environment (Check Again in Installed OS)</i>";
 
@@ -3727,17 +3768,21 @@ public class QAHelper extends javax.swing.JFrame {
 
                     lblScreenText = "<html>" + lblScreenText + " - <b>" + screenErrorString + "</b></html>";
                     lblScreenToolTipText += "<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Note:</b> " + escapeSingleLineSpecStringForHTML(screenErrorString);
-                } else if (lblScreenText.endsWith("N/A")) {
+                } else if (lblScreenText.endsWith("N/A") || lblScreenText.equals("Touchscreen")) {
                     if (isWindowsPE) {
-                        lblScreenColor = warningColor;
+                        lblScreenColor = attentionColor;
 
-                        String screenWinPEnote = (computerSpecs.getFullScreenSize().contains("-inch") ? "<i>" : "<i>Size and ") + "Resolution Not Available in Windows Preinstallation Environment<i>";
+                        String screenWinPEnote = (computerSpecs.getFullScreenSize().contains("-inch") ? "<i>" : "<i>Size and ") + "Resolution Not Available in Windows Preinstallation Environment <i>"; // An extra space is intentionally added so that the last italic letter is not cut off.
 
-                        lblScreenText = "<html>" + escapeSingleLineSpecStringForHTML(lblScreenText).replace("N/A", screenWinPEnote) + "</html>";
+                        if (lblScreenText.equals("Touchscreen")) {
+                            lblScreenText = "<html>" + escapeSingleLineSpecStringForHTML(lblScreenText) + " - " + screenWinPEnote + "</html>";
+                        } else {
+                            lblScreenText = "<html>" + escapeSingleLineSpecStringForHTML(lblScreenText).replace("N/A", screenWinPEnote) + "</html>";
 
-                        int seperatorIndex = lblScreenText.lastIndexOf(": ");
-                        if (seperatorIndex > 0) {
-                            lblScreenText = lblScreenText.substring(0, seperatorIndex) + " - " + lblScreenText.substring(seperatorIndex + 2);
+                            int seperatorIndex = lblScreenText.lastIndexOf(": ");
+                            if (seperatorIndex > 0) {
+                                lblScreenText = lblScreenText.substring(0, seperatorIndex) + " - " + lblScreenText.substring(seperatorIndex + 2);
+                            }
                         }
 
                         lblScreenToolTipText += "<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Note:</b> " + screenWinPEnote;
@@ -4199,7 +4244,19 @@ public class QAHelper extends javax.swing.JFrame {
                 try {
                     isAuthenticated = PCsCRMManager.authenticateCredentials(username, loginPassword, isTestMode);
 
+                    if (!isAuthenticated && username.contains("@")) {
+                        username = username.substring(0, username.indexOf("@"));
+
+                        if (!username.isEmpty()) {
+                            isAuthenticated = PCsCRMManager.authenticateCredentials(username, loginPassword, isTestMode);
+                        }
+                    }
+
                     if (isAuthenticated) {
+                        if (!txtUsername.getText().equals(username)) {
+                            txtUsername.setText(username);
+                        }
+
                         loggedInUserInfo = PCsCRMManager.getUserInfo(username, isTestMode);
                     } else {
                         loadingWindow.closeWindow();
@@ -4234,8 +4291,8 @@ public class QAHelper extends javax.swing.JFrame {
                 txtPID.setText(thisPID);
             }
 
-            boolean pidExists = false;
             boolean isAuthenticated = false;
+            boolean pidExists = false;
 
             String loggedStatus = "ERROR";
             String latestTech = "UNKNOWN TECH";
@@ -4244,178 +4301,193 @@ public class QAHelper extends javax.swing.JFrame {
                 if (thisPID.matches("^[A-Z]+[0-9]+-[0-9]+$") || thisPID.matches("^[0-9]+$")) { // Also allow only digits for company acquired by PCs4P in Feb 2025 where they imported their old IDs and continued using them until they ran out.
                     String statusHistoryDataContent = "UNKNOWN STATUS HISTORY ERROR";
 
-                    try {
-                        pidExists = PCsCRMManager.pidExists(thisPID, isTestMode);
+                    isAuthenticated = authenticateUser();
 
-                        if (!pidExists) {
-                            loadingWindow.closeWindow();
-                            playAlertSound("error");
-                            JOptionPane.showMessageDialog(qaHelperWindow, "<html>" + new TwemojiImage("CrossMark", qaHelperWindow).toImgTag("left") + " <b style='color: " + errorColorHTML + "'>ID \"" + thisPID + "\" Does Not Exist</b><br/><br/><i>Double-check the ID or create it at PCsCRM.com.</i></html>", "QA Helper  —  ID Error", JOptionPane.WARNING_MESSAGE, new TwemojiImage("IDButton", qaHelperWindow).toImageIcon(32));
-                        } else {
-                            isAuthenticated = authenticateUser();
+                    if (isAuthenticated) {
+                        try {
+                            pidExists = PCsCRMManager.pidExists(thisPID, isTestMode);
 
-                            String loggedBrand = "ERROR";
-                            String loggedModel = "ERROR";
-                            String loggedSerial = "ERROR";
-                            String loggedConditionGrade = "ERROR";
-                            String loggedNotes = "ERROR";
-                            String loggedSetByAppName = "";
-                            String loggedSetByVersion = "";
+                            if (!pidExists) {
+                                loadingWindow.closeWindow();
+                                playAlertSound("error");
+                                JOptionPane.showMessageDialog(qaHelperWindow, "<html>" + new TwemojiImage("CrossMark", qaHelperWindow).toImgTag("left") + " <b style='color: " + errorColorHTML + "'>ID \"" + thisPID + "\" Does Not Exist</b><br/><br/><i>Double-check the ID or create it at PCsCRM.com.</i></html>", "QA Helper  —  ID Error", JOptionPane.WARNING_MESSAGE, new TwemojiImage("IDButton", qaHelperWindow).toImageIcon(32));
+                            } else {
+                                String loggedBrand = "ERROR";
+                                String loggedModel = "ERROR";
+                                String loggedSerial = "ERROR";
+                                String loggedConditionGrade = "ERROR";
+                                String loggedNotes = "ERROR";
+                                String loggedSetByAppName = "";
+                                String loggedSetByVersion = "";
 
-                            try {
-                                LinkedHashMap<String, String> loggedSpecs = PCsCRMManager.getSpecsForPID(thisPID, isTestMode, true);
+                                try {
+                                    LinkedHashMap<String, String> loggedSpecs = PCsCRMManager.getSpecsForPID(thisPID, isTestMode, true);
 
-                                loggedStatus = loggedSpecs.get("Status");
-                                loggedBrand = loggedSpecs.get("Brand");
-                                loggedModel = loggedSpecs.get("Model");
+                                    loggedStatus = loggedSpecs.get("Status");
+                                    loggedBrand = loggedSpecs.get("Brand");
+                                    loggedModel = loggedSpecs.get("Model");
 
-                                loggedSerial = loggedSpecs.get("Serial").replaceAll("^[. /]+", "").replaceAll("[. /]+$", ""); // Trim all leading and trailing spaces, periods, and slashes (in case the serial was logged from different PCs for People software that doesn't clean it like this does).
-                                if (computerSpecs.ignoreSpecsPlaceholders(loggedSerial)) { // Check and ignore if a placeholder value was logged for the serial in case the serial was logged from different PCs for People software that doesn't clean it like this does.
-                                    loggedSerial = "NOT LOGGED";
-                                }
+                                    loggedSerial = loggedSpecs.get("Serial").replaceAll("^[. /]+", "").replaceAll("[. /]+$", ""); // Trim all leading and trailing spaces, periods, and slashes (in case the serial was logged from different PCs for People software that doesn't clean it like this does).
+                                    if (computerSpecs.ignoreSpecsPlaceholders(loggedSerial)) { // Check and ignore if a placeholder value was logged for the serial in case the serial was logged from different PCs for People software that doesn't clean it like this does.
+                                        loggedSerial = "NOT LOGGED";
+                                    }
 
-                                loggedConditionGrade = loggedSpecs.get("Condition Grade");
-                                loggedNotes = loggedSpecs.get("Notes");
+                                    loggedConditionGrade = loggedSpecs.get("Condition Grade");
+                                    loggedNotes = loggedSpecs.get("Notes");
 
-                                if (loggedSpecs.containsKey("Set By")) { // This is an EXTRA field which may not exist.
-                                    String loggedSetBy = loggedSpecs.get("Set By");
-                                    if ((loggedSetBy != null) && !loggedSetBy.isEmpty()) {
-                                        String loggedSetByAppAndVersionPart = loggedSetBy;
-                                        int setByTimestampSeparatorIndex = loggedSetBy.indexOf(" @ ");
-                                        if (setByTimestampSeparatorIndex != -1) {
-                                            loggedSetByAppAndVersionPart = loggedSetBy.substring(0, setByTimestampSeparatorIndex).trim();
-                                        }
-
-                                        int appNameAndVersionSpaceSeparatorIndex = loggedSetByAppAndVersionPart.lastIndexOf(" ");
-                                        if (appNameAndVersionSpaceSeparatorIndex != -1) {
-                                            loggedSetByAppName = loggedSetByAppAndVersionPart.substring(0, appNameAndVersionSpaceSeparatorIndex).trim();
-                                            loggedSetByVersion = loggedSetByAppAndVersionPart.substring(appNameAndVersionSpaceSeparatorIndex + 1).trim();
-                                            if (!isValidAppVersion(loggedSetByVersion)) { // TODO: Could iterate each word checking for a valid version string instead.
-                                                System.out.println("INVALID Set By Version: |" + loggedSetByVersion + "|"); // DEBUG
-                                                loggedSetByVersion = "";
+                                    if (loggedSpecs.containsKey("Set By")) { // This is an EXTRA field which may not exist.
+                                        String loggedSetBy = loggedSpecs.get("Set By");
+                                        if ((loggedSetBy != null) && !loggedSetBy.isEmpty()) {
+                                            String loggedSetByAppAndVersionPart = loggedSetBy;
+                                            int setByTimestampSeparatorIndex = loggedSetBy.indexOf(" @ ");
+                                            if (setByTimestampSeparatorIndex != -1) {
+                                                loggedSetByAppAndVersionPart = loggedSetBy.substring(0, setByTimestampSeparatorIndex).trim();
                                             }
 
-                                            if (isTestMode) {
-                                                System.out.println("loggedSetBy: |" + loggedSetBy + "|"); // DEBUG
-                                                System.out.println("loggedSetByAppName: |" + loggedSetByAppName + "|"); // DEBUG
-                                                System.out.println("loggedSetByVersion: |" + loggedSetByVersion + "|"); // DEBUG
+                                            int appNameAndVersionSpaceSeparatorIndex = loggedSetByAppAndVersionPart.lastIndexOf(" ");
+                                            if (appNameAndVersionSpaceSeparatorIndex != -1) {
+                                                loggedSetByAppName = loggedSetByAppAndVersionPart.substring(0, appNameAndVersionSpaceSeparatorIndex).trim();
+                                                loggedSetByVersion = loggedSetByAppAndVersionPart.substring(appNameAndVersionSpaceSeparatorIndex + 1).trim();
+                                                if (!isValidAppVersion(loggedSetByVersion)) { // TODO: Could iterate each word checking for a valid version string instead.
+                                                    System.out.println("INVALID Set By Version: |" + loggedSetByVersion + "|"); // DEBUG
+                                                    loggedSetByVersion = "";
+                                                }
+
+                                                if (isTestMode) {
+                                                    System.out.println("loggedSetBy: |" + loggedSetBy + "|"); // DEBUG
+                                                    System.out.println("loggedSetByAppName: |" + loggedSetByAppName + "|"); // DEBUG
+                                                    System.out.println("loggedSetByVersion: |" + loggedSetByVersion + "|"); // DEBUG
+                                                }
                                             }
                                         }
                                     }
+                                } catch (Exception parseLoggedSpecsException) {
+                                    System.out.println("parseLoggedSpecsException: " + parseLoggedSpecsException);
+                                    sendErrorEmail("parseLoggedSpecsException: " + parseLoggedSpecsException);
                                 }
-                            } catch (Exception parseLoggedSpecsException) {
-                                System.out.println("parseLoggedSpecsException: " + parseLoggedSpecsException);
-                                sendErrorEmail("parseLoggedSpecsException: " + parseLoggedSpecsException);
-                            }
 
-                            if (isAuthenticated) {
                                 statusHistoryDataContent = PCsCRMManager.getStatusHistoryContentForPID(thisPID, isTestMode);
                                 latestTech = new StatusHistoryWindow(statusHistoryDataContent, null, PCsCRMManager, isTestMode).getLatestTech();
-                            }
 
-                            if (isOnlyChecking) {
-                                if (!isLoggedIn) {
-                                    loggedInUserInfo.clear();
-                                    PCsCRMManager.logOut();
-                                }
-
-                                loadingWindow.closeWindow();
-                                playAlertSound("success");
-                                JOptionPane.showMessageDialog(qaHelperWindow, "<html>"
-                                        + new TwemojiImage("CheckMarkButton", qaHelperWindow).toImgTag("left") + " <b style='color: " + successColorHTML + "'>ID \"" + thisPID + "\" Exists" + (loggedStatus.equals("ERROR") ? "" : " with Status <u>" + loggedStatus + "</u>" + ((!isAuthenticated || latestTech.equals("UNKNOWN TECH")) ? "" : (" by <i>" + latestTech + "</i>"))) + "</b>"
-                                        + ((loggedBrand.equals("ERROR") && loggedModel.equals("ERROR") && loggedSerial.equals("ERROR"))
-                                        ? ""
-                                        : "<br/><br/>"
-                                        + "<i>Logged Specs Summary for " + thisPID + ":</i>"
-                                        + "<br/>"
-                                        + "<b>Brand:</b> " + loggedBrand + "<br/>"
-                                        + "<b>Model:</b> " + loggedModel + "<br/>"
-                                        + "<b>Serial:</b> " + loggedSerial + "<br/>")
-                                        + "</html>", "QA Helper  —  Check ID", JOptionPane.INFORMATION_MESSAGE, new TwemojiImage("IDButton", qaHelperWindow).toImageIcon(32));
-                            } else if (isAuthenticated) {
-                                if (!loggedSerial.isEmpty() && !loggedSerial.equals("NOT LOGGED") && !loggedSerial.equals((deviceTypeIsMotherboard ? computerSpecs.getMotherboardSerial() : computerSpecs.getSerial()))) {
-                                    loadingWindow.closeWindow();
-
-                                    playAlertSound("error");
-                                    ArrayList<String> pidAlreadyLoggedDialogButtons = new ArrayList<>();
-                                    pidAlreadyLoggedDialogButtons.add("Cancel Login");
-                                    if (isTestMode) { // TODO: Add some way to allow login in Live Mode.
-                                        pidAlreadyLoggedDialogButtons.add("Log In Anyway");
-                                    } else {
-                                        sendErrorEmail("ID \"" + thisPID + "\" Already Logged for DIFFERENT Serial \"" + loggedSerial + "\" with Status \"" + loggedStatus + "\" by \"" + latestTech + "\"");
-                                    }
-
-                                    int pidAlreadyLoggedDialogReturn = JOptionPane.showOptionDialog(qaHelperWindow, "<html>"
-                                            + "<b style='color: " + errorColorHTML + "'>ID \"" + thisPID + "\" Already Logged for <u>DIFFERENT</u> Serial with Status <u>" + loggedStatus + "</u>" + (latestTech.equals("UNKNOWN TECH") ? "" : (" by <i>" + latestTech + "</i>")) + "</b>"
-                                            + "<br/><br/>"
-                                            + "<b style='color: " + warningColorHTML + "'>Double-check the ID. <u style='color: " + warningColorHTML + "'>Most likely, you or a previous technician mistyped the ID.</u></b>"
-                                            + "<br/><br/>"
-                                            + new TwemojiImage("BackhandIndexPointingRight", qaHelperWindow).toImgTag("left") + " <b style='color: " + attentionColorHTML + "'>If the ID is correct, CONSULT YOUR MANAGER (or I.T.) to be able to complete this computer.</b> " + new TwemojiImage("DoubleExclamationMark", qaHelperWindow).toImgTag("right")
-                                            + "<br/><br/>"
-                                            + "<i>Logged Specs Summary for " + thisPID + ":</i>"
-                                            + "<br/>"
-                                            + "<b>Brand:</b> " + loggedBrand + "<br/>"
-                                            + "<b>Model:</b> " + loggedModel + "<br/>"
-                                            + "<b>Serial:</b> " + loggedSerial + "<br/>"
-                                            + "</html>", "QA Helper  —  ID Already Logged for Different Serial", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE, new TwemojiImage("Collision", qaHelperWindow).toImageIcon(32), pidAlreadyLoggedDialogButtons.toArray(), pidAlreadyLoggedDialogButtons.get(0));
-
-                                    if (pidAlreadyLoggedDialogReturn != JOptionPane.NO_OPTION) {
+                                if (isOnlyChecking) {
+                                    if (!isLoggedIn) {
                                         loggedInUserInfo.clear();
                                         PCsCRMManager.logOut();
-
-                                        return null;
                                     }
 
-                                    loadingWindow.setLoadingTextAndDisplay("QA Helper is Logging In", "Working", "Key");
-                                }
-
-                                if (isLinux) {
-                                    String previousAdminPassword = adminPassword;
-                                    getAdminPassword("Save ID to Disk"); // Double-check that admin password is still correct.
-
-                                    if (!adminPassword.equals(previousAdminPassword)) {
-                                        computerSpecs.reloadSpecs(adminPassword, isTestMode);
-
-                                        // Will displayComputerSpecs on main thread after login complete.
-                                    }
-                                }
-
-                                if (createHelperLogFile() || !pid.equals(thisPID) || !Objects.equals(isTestMode, gotTestModeFromLog)) {
-                                    writeToHelperLogFile("ID: " + thisPID + (isTestMode ? " (Test Mode)" : ""));
-                                    gotTestModeFromLog = isTestMode;
-                                }
-
-                                pid = thisPID;
-
-                                // TODO: ENABLE FOR FG WHEN FINALIZED AND DOCUMENTED OUR DESIRED CONDITION GRADES: allowSettingConditionGrade = pid.startsWith("FG"); // NOTE: NOT allowing setting "Condition Grade" for non-Free Geek IDs, because PCs for People uses the field for specific R2 grading which is used in audits.
-                                if (allowSettingConditionGrade && fgConditionGradesAndDescriptions.containsKey(loggedConditionGrade) && (!loggedConditionGrade.equals("B") || !loggedSetByVersion.isEmpty())) {
-                                    // For Free Geek IDs, ignore default condition grade of "B" if specs have not been logged yet,
-                                    // or were logged by a version of QA Helper (or FG API/Specs) older than SOME FUTURE VERSION
-                                    // which did not have the option to set Condition Grade (and older than SOME FUTURE VERSION did not fill the EXTRA "Set By" field).
-
-                                    currentConditionGrade = loggedConditionGrade;
+                                    loadingWindow.closeWindow();
+                                    playAlertSound("success");
+                                    JOptionPane.showMessageDialog(qaHelperWindow, "<html>"
+                                            + new TwemojiImage("CheckMarkButton", qaHelperWindow).toImgTag("left") + " <b style='color: " + successColorHTML + "'>ID \"" + thisPID + "\" Exists" + (loggedStatus.equals("ERROR") ? "" : " with Status <u>" + loggedStatus + "</u>" + (latestTech.equals("UNKNOWN TECH") ? "" : (" by <i>" + latestTech + "</i> "))) + "</b>"
+                                            + ((loggedBrand.equals("ERROR") && loggedModel.equals("ERROR") && loggedSerial.equals("ERROR"))
+                                            ? ""
+                                            : "<br/><br/>"
+                                            + "<i>Logged Specs Summary for " + thisPID + ":</i>"
+                                            + "<br/><br/>"
+                                            + "<p style='font-family: monospace'>"
+                                            + "<b>&nbsp;Brand:</b> " + loggedBrand + "<br/>"
+                                            + "<b>&nbsp;Model:</b> " + loggedModel + "<br/>"
+                                            + "<b>Serial:</b> " + loggedSerial
+                                            + "</p>")
+                                            + "</html>", "QA Helper  —  Check ID", JOptionPane.INFORMATION_MESSAGE, new TwemojiImage("IDButton", qaHelperWindow).toImageIcon(32));
                                 } else {
-                                    currentConditionGrade = "N/A";
-                                }
+                                    if (!loggedSerial.isEmpty() && !loggedSerial.equals("NOT LOGGED") && !loggedSerial.equals((deviceTypeIsMotherboard ? computerSpecs.getMotherboardSerial() : computerSpecs.getSerial()))) {
+                                        boolean allowLogin = false;
+                                        if (computerSpecs.getSerialIsMAC()) {
+                                            String[] loggedMACarray = loggedSerial.split(" \\+ ");
+                                            for (String thisLoggedMAC : loggedMACarray) {
+                                                if (computerSpecs.getEthernetMACarray().contains(thisLoggedMAC)) {
+                                                    allowLogin = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
 
-                                currentNotes = StringEscapeUtils.unescapeHtml4(loggedNotes.replace("<br/>", "\n").replace("<br />", "\n").replace("<br>", "\n").replace("&nbsp;&nbsp;&nbsp;&nbsp;", "\t").replace("&nbsp;", " ")).trim();
-                                if (currentNotes.equals("NOT LOGGED") || currentNotes.equals("ERROR") || currentNotes.equals("N/A")) {
-                                    currentNotes = "";
-                                }
+                                        if (!allowLogin) {
+                                            loadingWindow.closeWindow();
 
-                                conditionAndNotesUpdated = true;
+                                            playAlertSound("error");
+                                            ArrayList<String> pidAlreadyLoggedDialogButtons = new ArrayList<>();
+                                            pidAlreadyLoggedDialogButtons.add("Cancel Login");
+                                            if (isTestMode) { // TODO: Add some way to allow login in Live Mode.
+                                                pidAlreadyLoggedDialogButtons.add("Log In Anyway");
+                                            } else {
+                                                sendErrorEmail("ID \"" + thisPID + "\" Already Logged for DIFFERENT Serial \"" + loggedSerial + "\" with Status \"" + loggedStatus + "\" by \"" + latestTech + "\"");
+                                            }
+
+                                            int pidAlreadyLoggedDialogReturn = JOptionPane.showOptionDialog(qaHelperWindow, "<html>"
+                                                    + "<b style='color: " + errorColorHTML + "'>ID \"" + thisPID + "\" Already Logged for <u>DIFFERENT</u> Serial with Status <u>" + loggedStatus + "</u>" + (latestTech.equals("UNKNOWN TECH") ? "" : (" by <i>" + latestTech + "</i>")) + "</b>"
+                                                    + "<br/><br/>"
+                                                    + "<b style='color: " + warningColorHTML + "'>Double-check the ID. <u style='color: " + warningColorHTML + "'>Most likely, you or a previous technician mistyped the ID.</u></b>"
+                                                    + "<br/><br/>"
+                                                    + new TwemojiImage("BackhandIndexPointingRight", qaHelperWindow).toImgTag("left") + " <b style='color: " + attentionColorHTML + "'>If the ID is correct, CONSULT YOUR MANAGER (or I.T.) to be able to complete this computer.</b> " + new TwemojiImage("DoubleExclamationMark", qaHelperWindow).toImgTag("right")
+                                                    + "<br/><br/>"
+                                                    + "<i>Logged Specs Summary for " + thisPID + ":</i>"
+                                                    + "<br/>"
+                                                    + "<b>Brand:</b> " + loggedBrand + "<br/>"
+                                                    + "<b>Model:</b> " + loggedModel + "<br/>"
+                                                    + "<b>Serial:</b> " + loggedSerial + "<br/>"
+                                                    + "</html>", "QA Helper  —  ID Already Logged for Different Serial", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE, new TwemojiImage("Collision", qaHelperWindow).toImageIcon(32), pidAlreadyLoggedDialogButtons.toArray(), pidAlreadyLoggedDialogButtons.get(0));
+
+                                            if (pidAlreadyLoggedDialogReturn != JOptionPane.NO_OPTION) {
+                                                loggedInUserInfo.clear();
+                                                PCsCRMManager.logOut();
+
+                                                return null;
+                                            }
+
+                                            loadingWindow.setLoadingTextAndDisplay("QA Helper is Logging In", "Working", "Key");
+                                        }
+                                    }
+
+                                    if (isLinux) {
+                                        String previousAdminPassword = adminPassword;
+                                        getAdminPassword("Save ID to Disk"); // Double-check that admin password is still correct.
+
+                                        if (!adminPassword.equals(previousAdminPassword)) {
+                                            computerSpecs.reloadSpecs(adminPassword, isTestMode);
+
+                                            // Will displayComputerSpecs on main thread after login complete.
+                                        }
+                                    }
+
+                                    if (createHelperLogFile() || !pid.equals(thisPID) || !Objects.equals(isTestMode, gotTestModeFromLog)) {
+                                        writeToHelperLogFile("ID: " + thisPID + (isTestMode ? " (Test Mode)" : ""));
+                                        gotTestModeFromLog = isTestMode;
+                                    }
+
+                                    pid = thisPID;
+
+                                    // TODO: ENABLE FOR FG WHEN FINALIZED AND DOCUMENTED OUR DESIRED CONDITION GRADES: allowSettingConditionGrade = pid.startsWith("FG"); // NOTE: NOT allowing setting "Condition Grade" for non-Free Geek IDs, because PCs for People uses the field for specific R2 grading which is used in audits.
+                                    if (allowSettingConditionGrade && fgConditionGradesAndDescriptions.containsKey(loggedConditionGrade) && (!loggedConditionGrade.equals("B") || !loggedSetByVersion.isEmpty())) {
+                                        // For Free Geek IDs, ignore default condition grade of "B" if specs have not been logged yet,
+                                        // or were logged by a version of QA Helper (or FG API/Specs) older than SOME FUTURE VERSION
+                                        // which did not have the option to set Condition Grade (and older than SOME FUTURE VERSION did not fill the EXTRA "Set By" field).
+
+                                        currentConditionGrade = loggedConditionGrade;
+                                    } else {
+                                        currentConditionGrade = "N/A";
+                                    }
+
+                                    currentNotes = StringEscapeUtils.unescapeHtml4(loggedNotes.replace("<br/>", "\n").replace("<br />", "\n").replace("<br>", "\n").replace("&nbsp;&nbsp;&nbsp;&nbsp;", "\t").replace("&nbsp;", " ")).trim();
+                                    if (currentNotes.equals("NOT LOGGED") || currentNotes.equals("ERROR") || currentNotes.equals("N/A")) {
+                                        currentNotes = "";
+                                    }
+
+                                    conditionAndNotesUpdated = true;
+                                }
                             }
-                        }
-                    } catch (Exception checkPIDException) {
-                        if (isTestMode) {
-                            System.out.println("checkPIDException: " + checkPIDException + "\n\nstatusHistoryDataContent: " + statusHistoryDataContent);
-                        }
+                        } catch (Exception checkPIDException) {
+                            if (isTestMode) {
+                                System.out.println("checkPIDException: " + checkPIDException + "\n\nstatusHistoryDataContent: " + statusHistoryDataContent);
+                            }
 
-                        sendErrorEmail("checkPIDException: " + checkPIDException + "\n\nstatusHistoryDataContent: " + statusHistoryDataContent);
+                            sendErrorEmail("checkPIDException: " + checkPIDException + "\n\nstatusHistoryDataContent: " + statusHistoryDataContent);
 
-                        loadingWindow.closeWindow();
-                        playAlertSound("error");
-                        JOptionPane.showMessageDialog(qaHelperWindow, "<html><b>Failed to Connect to <i>PCsCRM</i> to <i>Check ID</i></b></html>", "QA Helper  —  Check ID Error", JOptionPane.ERROR_MESSAGE);
+                            loadingWindow.closeWindow();
+                            playAlertSound("error");
+                            JOptionPane.showMessageDialog(qaHelperWindow, "<html><b>Failed to Connect to <i>PCsCRM</i> to <i>Check ID</i></b></html>", "QA Helper  —  Check ID Error", JOptionPane.ERROR_MESSAGE);
+                        }
                     }
                 } else {
                     loadingWindow.closeWindow();
@@ -4426,7 +4498,7 @@ public class QAHelper extends javax.swing.JFrame {
                 playAlertSound("beep");
             }
 
-            if (pidExists && isAuthenticated) {
+            if (isAuthenticated && pidExists) {
                 return new String[]{loggedStatus, latestTech};
             }
         }
@@ -4558,12 +4630,20 @@ public class QAHelper extends javax.swing.JFrame {
                             String systemProfileOutputPath = (macBuildInfoPath + (!pidPrefix.isEmpty() ? ((pidPrefix.equals("FG") ? "Free Geek" : pidPrefix) + " - ") : "") + "System Profile.txt");
 
                             if (!new File(systemProfileOutputPath).exists()) {
+                                String loggedBatteryHealthWarningsAndErrors = "";
+                                if (!computerSpecs.getBatteryHealthWarningArray().isEmpty()) {
+                                    loggedBatteryHealthWarningsAndErrors += " + Battery Warning: " + String.join(", ", computerSpecs.getBatteryHealthWarningArray());
+                                }
+                                if (!computerSpecs.getBatteryHealthErrorArray().isEmpty()) {
+                                    loggedBatteryHealthWarningsAndErrors += " + Battery Error: " + String.join(", ", computerSpecs.getBatteryHealthErrorArray());
+                                }
+
                                 String modelAndProcessorOutput = "Model Name:\n\t"
                                         + computerSpecs.getFullModel()
                                         + "\n\n"
                                         + "Processor Model:\n\t"
                                         + computerSpecs.getFullCPU()
-                                        + (computerSpecs.getBatteryHealthArray().isEmpty() ? "" : "\n\nBattery Health:\n\t" + computerSpecs.getBatteryHealthString())
+                                        + (computerSpecs.getBatteryHealthArray().isEmpty() ? "" : "\n\nBattery Health:\n\t" + computerSpecs.getBatteryHealthString() + loggedBatteryHealthWarningsAndErrors.toUpperCase())
                                         + (computerSpecs.getPowerAdapter().isEmpty() ? "" : "\n\nPower Adapter:\n\t" + computerSpecs.getPowerAdapter());
 
                                 boolean isAppleSiliconRosetta = (computerSpecs.getFullCPU().startsWith("Apple") && new CommandReader(new String[]{"/usr/sbin/sysctl", "-in", "sysctl.proc_translated"}).getFirstOutputLine().equals("1"));
@@ -4673,12 +4753,20 @@ public class QAHelper extends javax.swing.JFrame {
             try {
                 HashMap<String, String> updateSpecs = new HashMap<>();
 
+                String loggedBatteryHealthWarningsAndErrors = "";
+                if (!computerSpecs.getBatteryHealthWarningArray().isEmpty()) {
+                    loggedBatteryHealthWarningsAndErrors += " + Battery Warning: " + String.join(", ", computerSpecs.getBatteryHealthWarningArray());
+                }
+                if (!computerSpecs.getBatteryHealthErrorArray().isEmpty()) {
+                    loggedBatteryHealthWarningsAndErrors += " + Battery Error: " + String.join(", ", computerSpecs.getBatteryHealthErrorArray());
+                }
+
                 // Use the Notes field to include EXTRA fields which there are not ACTUAL fields for.
                 String notesAndExtraFields = (currentNotes.isEmpty() ? "N/A" : "<br/>" + escapeMultiLineStringForHTML(currentNotes))
                         + "\n<br/><br/>" // This EXACT sequence separate the actual notes (above) from the EXTRA fields (below).
                         // The extra fields are separated by "<br/>" tags and intentionally left visible in PCsCRM within the notes.
                         + "Wireless: " + escapeSingleLineSpecStringForHTML(computerSpecs.getWireless())
-                        + ((!deviceTypeIsMotherboard && (deviceTypeIsLaptop || !computerSpecs.getBatteryHealthArray().isEmpty())) ? "<br/>Battery Health: " + escapeSingleLineSpecStringForHTML(computerSpecs.getBatteryHealthString()) : "")
+                        + ((!deviceTypeIsMotherboard && (deviceTypeIsLaptop || !computerSpecs.getBatteryHealthArray().isEmpty())) ? "<br/>Battery Health: " + escapeSingleLineSpecStringForHTML(computerSpecs.getBatteryHealthString() + loggedBatteryHealthWarningsAndErrors.toUpperCase()) : "")
                         + ((!computerSpecs.getPowerAdapter().isEmpty()) ? "<br/>Power Adapter: " + escapeSingleLineSpecStringForHTML(computerSpecs.getPowerAdapter()) : "")
                         + "<br/>Device Type: " + escapeSingleLineSpecStringForHTML(manualDeviceType); // Just want device type, don't need all the detail of "computerSpecs.getChassisType()".
                 // Can also specify HIDDEN EXTRA fields as HTML comments (which are not visible in PCsCRM), separated by newlines instead of "<br/>" tags (to not add a visible extra empty lines when viewed in PCsCRM).
@@ -4690,7 +4778,7 @@ public class QAHelper extends javax.swing.JFrame {
                 updateSpecs.put("Serial", escapeSingleLineSpecStringForHTML((deviceTypeIsMotherboard ? computerSpecs.getMotherboardSerial() : computerSpecs.getSerial()), 150));
                 updateSpecs.put("OS", ((isLinuxLiveBoot || isWindowsPE || isMacTestBoot || deviceTypeIsMotherboard) ? "N/A" : escapeSingleLineSpecStringForHTML(computerSpecs.getOS(), 150)));
                 updateSpecs.put("CPU", escapeSingleLineSpecStringForHTML(computerSpecs.getCPU(), 150));
-                updateSpecs.put("RAM", escapeSingleLineSpecStringForHTML(computerSpecs.getRAM(), 150));
+                updateSpecs.put("RAM", escapeSingleLineSpecStringForHTML((deviceTypeIsMotherboard ? computerSpecs.getMotherboardRAM() : computerSpecs.getRAM()), 150));
                 updateSpecs.put("Storage", (deviceTypeIsMotherboard ? "N/A" : escapeSingleLineSpecStringForHTML(computerSpecs.getStorage(), 150)));
                 updateSpecs.put("Storage Serial", (deviceTypeIsMotherboard ? "N/A" : escapeSingleLineSpecStringForHTML(computerSpecs.getStorageSerial(), 75))); // Version 2025.7.18-1 was the first to set this field.
                 updateSpecs.put("GPU", (deviceTypeIsMotherboard ? "N/A" : escapeSingleLineSpecStringForHTML(computerSpecs.getGPU(), 150)));
@@ -4785,7 +4873,7 @@ public class QAHelper extends javax.swing.JFrame {
                                         setRecentIDParameters.put("action", "Set Status to \"" + newStatusName + "\"");
                                         setRecentIDParameters.put("value_format", "text");
 
-                                        String setRecentIDResponseContent = new WebReader(privateStrings.getFreeGeekAPI("specs/set?recent_id", isTestMode), username, new String(pswPassword.getPassword()), setRecentIDParameters).getOutputLinesAsString();
+                                        String setRecentIDResponseContent = new WebReader(privateStrings.getFreeGeekAPIurl("specs/set?recent_id", isTestMode), username, new String(pswPassword.getPassword()), setRecentIDParameters).getOutputLinesAsString();
 
                                         if (isTestMode) {
                                             System.out.println("setRecentIDResponseContent:\n" + setRecentIDResponseContent);
@@ -4817,7 +4905,9 @@ public class QAHelper extends javax.swing.JFrame {
                                 }
                             }).execute();
 
-                            addToFreeGeekProductionLog(); // IMPORTANT: Intentionally having this function BLOCK until it returns.
+                            if (!deviceTypeIsMotherboard) { // If Motherboard, QA Helper IS NOT setting "statusNames[12]" here and only added to Recent IDs above and therefore DO NOT want added to Production Log here since will be added when "statusNames[12]" is set by FG Specs.
+                                addToFreeGeekProductionLog(); // IMPORTANT: Intentionally having this function BLOCK until it returns.
+                            }
                         }
 
                         undidOemConfigAfterLastStatus = false;
@@ -5349,7 +5439,7 @@ public class QAHelper extends javax.swing.JFrame {
                                             + "<input type=\"hidden\" name=\"__EVENTTARGET\" id=\"__EVENTTARGET\" value=\"lbLogin\">"
                                             + hiddenPCsCRMloginInputs
                                             + "<input name=\"txtUsername\" type=\"hidden\" id=\"txtUsername\" value=\"" + username + "\" />"
-                                            + "<input name=\"txtPassword\" type=\"hidden\" maxlength=\"15\" id=\"txtPassword\" value=\"" + loginPassword + "\" />"
+                                            + "<input name=\"txtPassword\" type=\"hidden\" id=\"txtPassword\" value=\"" + loginPassword + "\" />"
                                             + "</form>"
                                             + "</body>"
                                             + "</html>");
@@ -5632,7 +5722,7 @@ public class QAHelper extends javax.swing.JFrame {
         btnVerifyCPU = new javax.swing.JButton();
         lblRAMLabel = new javax.swing.JLabel();
         lblRAM = new javax.swing.JLabel();
-        lblBatteryCapacity = new javax.swing.JLabel();
+        lblBatteryHealth = new javax.swing.JLabel();
         lblStorageLabel = new javax.swing.JLabel();
         lblStorage = new javax.swing.JLabel();
         btnDriveHealth = new javax.swing.JButton();
@@ -5920,9 +6010,9 @@ public class QAHelper extends javax.swing.JFrame {
         lblRAM.setText("ERROR");
         lblRAM.setComponentPopupMenu(specValueRightClickMenu);
 
-        lblBatteryCapacity.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
-        lblBatteryCapacity.setText("<html><b>Battery Health:</b> ERROR</html>");
-        lblBatteryCapacity.setComponentPopupMenu(specValueRightClickMenu);
+        lblBatteryHealth.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
+        lblBatteryHealth.setText("<html><b>Battery Health:</b> ERROR</html>");
+        lblBatteryHealth.setComponentPopupMenu(specValueRightClickMenu);
 
         lblStorageLabel.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
         lblStorageLabel.setText("<html><b>Storage:</b></html>");
@@ -6377,7 +6467,7 @@ public class QAHelper extends javax.swing.JFrame {
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                                 .addComponent(lblRAM, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                                .addComponent(lblBatteryCapacity, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                                .addComponent(lblBatteryHealth, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
                             .addGroup(contentPaneLayout.createSequentialGroup()
                                 .addComponent(lblStorageLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
@@ -6571,7 +6661,7 @@ public class QAHelper extends javax.swing.JFrame {
                 .addGroup(contentPaneLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(lblRAMLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                     .addComponent(lblRAM)
-                    .addComponent(lblBatteryCapacity, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                    .addComponent(lblBatteryHealth, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addGroup(contentPaneLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                     .addComponent(lblStorageLabel, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
@@ -6665,7 +6755,7 @@ public class QAHelper extends javax.swing.JFrame {
                 .addGap(UIScale.scale(12), UIScale.scale(12), UIScale.scale(12)))
         );
 
-        contentPaneLayout.linkSize(javax.swing.SwingConstants.VERTICAL, new java.awt.Component[] {btnCheckDrivers, btnCheckPorts, btnCheckRemoteManagement, btnCheckWindowsLicense, btnCredits, btnDoneTesting, btnDriveHealth, btnEjectDiscDrive, btnLogIn, btnReloadSpecs, btnSaveOrPrintSpecs, btnSetupBIOS, btnStatusHistory, btnStressCPU, btnSystemInfo, btnSystemUpdates, btnTestAudio, btnTestCamera, btnTestInternet, btnTestKeyboard, btnTestMicrophone, btnTestMouse, btnTestScreen, btnVerifyAudio, btnVerifyBIOS, btnVerifyCPU, btnVerifyCamera, btnVerifyDiscDrive, btnVerifyDriveHealth, btnVerifyDrivers, btnVerifyInternet, btnVerifyKeyboard, btnVerifyMicrophone, btnVerifyMouse, btnVerifyPorts, btnVerifyRemoteManagement, btnVerifyScreen, btnVerifySystemUpdates, btnVerifyWindowsLicense, lblAudio, lblAudioLabel, lblBatteryCapacity, lblCPU, lblCPULabel, lblDiscDrive, lblDiscDriveLabel, lblGPU, lblGPULabel, lblModel, lblModelLabel, lblMoreTests, lblOS, lblPID, lblPassword, lblRAM, lblRAMLabel, lblScreen, lblScreenLabel, lblSerial, lblStorage, lblStorageLabel, lblTasks, lblUsername, lblWireless, lblWirelessLabel, pswPassword, txtPID, txtUsername});
+        contentPaneLayout.linkSize(javax.swing.SwingConstants.VERTICAL, new java.awt.Component[] {btnCheckDrivers, btnCheckPorts, btnCheckRemoteManagement, btnCheckWindowsLicense, btnCredits, btnDoneTesting, btnDriveHealth, btnEjectDiscDrive, btnLogIn, btnReloadSpecs, btnSaveOrPrintSpecs, btnSetupBIOS, btnStatusHistory, btnStressCPU, btnSystemInfo, btnSystemUpdates, btnTestAudio, btnTestCamera, btnTestInternet, btnTestKeyboard, btnTestMicrophone, btnTestMouse, btnTestScreen, btnVerifyAudio, btnVerifyBIOS, btnVerifyCPU, btnVerifyCamera, btnVerifyDiscDrive, btnVerifyDriveHealth, btnVerifyDrivers, btnVerifyInternet, btnVerifyKeyboard, btnVerifyMicrophone, btnVerifyMouse, btnVerifyPorts, btnVerifyRemoteManagement, btnVerifyScreen, btnVerifySystemUpdates, btnVerifyWindowsLicense, lblAudio, lblAudioLabel, lblBatteryHealth, lblCPU, lblCPULabel, lblDiscDrive, lblDiscDriveLabel, lblGPU, lblGPULabel, lblModel, lblModelLabel, lblMoreTests, lblOS, lblPID, lblPassword, lblRAM, lblRAMLabel, lblScreen, lblScreenLabel, lblSerial, lblStorage, lblStorageLabel, lblTasks, lblUsername, lblWireless, lblWirelessLabel, pswPassword, txtPID, txtUsername});
 
         contentScrollPane.setViewportView(contentPane);
 
@@ -7675,7 +7765,7 @@ public class QAHelper extends javax.swing.JFrame {
     }//GEN-LAST:event_btnForgotFocusLost
 
     private void btnCheckPIDActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnCheckPIDActionPerformed
-        if (actionsEnabled && !isLoggedIn && !txtPID.getText().replaceAll("\\s", "").isEmpty()) {
+        if (actionsEnabled && !isLoggedIn && !txtUsername.getText().trim().isEmpty() && (pswPassword.getPassword().length > 0) && !txtPID.getText().replaceAll("\\s", "").isEmpty()) {
             setActionsEnabled(false);
 
             loadingWindow.setLoadingTextAndDisplay("QA Helper is Checking ID", "Working", "IDButton");
@@ -7699,7 +7789,14 @@ public class QAHelper extends javax.swing.JFrame {
             }).execute();
         } else {
             playAlertSound("beep");
-            txtPID.requestFocusInWindow();
+
+            if (txtUsername.getText().trim().isEmpty()) {
+                txtUsername.requestFocusInWindow();
+            } else if (pswPassword.getPassword().length == 0) {
+                pswPassword.requestFocusInWindow();
+            } else {
+                txtPID.requestFocusInWindow();
+            }
         }
     }//GEN-LAST:event_btnCheckPIDActionPerformed
 
@@ -8195,7 +8292,7 @@ public class QAHelper extends javax.swing.JFrame {
                                 }
                             } else if (isLinux) {
                                 String lastStressReturnLines = stressReturn.substring(stressReturn.lastIndexOf("stress-ng: info:"));
-                                boolean stressPassed = (lastStressReturnLines.contains("] successful run completed in ") && (lastStressReturnLines.contains("s (" + cpuStressTestDurationMinutes + " mins") || lastStressReturnLines.contains("s (" + (cpuStressTestDurationMinutes - 1) + " mins, 59.") || lastStressReturnLines.contains(" " + cpuStressTestDurationMinutes + " mins") || lastStressReturnLines.contains(" " + (cpuStressTestDurationMinutes - 1) + " mins, 59.")));
+                                boolean stressPassed = (lastStressReturnLines.contains("] successful run completed in ") && (lastStressReturnLines.contains("s (" + cpuStressTestDurationMinutes + " min" + ((cpuStressTestDurationMinutes == 1) ? "" : "s")) || lastStressReturnLines.contains("s (" + (cpuStressTestDurationMinutes - 1) + " mins, 59.") || lastStressReturnLines.contains(" " + cpuStressTestDurationMinutes + " min" + ((cpuStressTestDurationMinutes == 1) ? "" : "s")) || lastStressReturnLines.contains(" " + (cpuStressTestDurationMinutes - 1) + " mins, 59.")));
 
                                 JLabel cpuStressTestOutputHeaderLabel = new JLabel("<html><b>CPU Stress Test " + (stressPassed ? "Passed" : "Failed") + "</b><br/><br/></html>");
                                 if (!stressPassed) {
@@ -8867,6 +8964,9 @@ public class QAHelper extends javax.swing.JFrame {
 
                                 connectedWiFiNetworkName = "";
 
+                                String adminUsernameForMacWiFiName = "";
+                                String adminPasswordForMacWiFiName = "";
+
                                 if (isLinux) {
                                     for (String thisWiFiNetworkLine : wiFiNetworks) {
                                         if (thisWiFiNetworkLine.startsWith("*") && thisWiFiNetworkLine.contains(" Infra ")) {
@@ -8881,16 +8981,68 @@ public class QAHelper extends javax.swing.JFrame {
                                         }
                                     }
                                 } else if (isMacOS) {
+                                    String possibleAdminUsername = new CommandReader(new String[]{"/usr/bin/id", "-un"}).getFirstOutputLine();
+                                    List<String> adminUsernames = Arrays.asList(new CommandReader(new String[]{"/bin/bash", "-c", "/usr/libexec/PlistBuddy -c 'Print :dsAttrTypeStandard\\:GroupMembership' /dev/stdin <<< \"$(/usr/bin/dscl -plist . -read /Groups/admin GroupMembership)\" | /usr/bin/awk '(($NF != \"{\") && ($NF != \"root\") && ($NF != \"}\")) { print $NF }'"}).getOutputLines());
+                                    if (!adminUsernames.isEmpty() && !adminUsernames.contains(possibleAdminUsername)) {
+                                        possibleAdminUsername = adminUsernames.get(0);
+                                    }
+                                    adminUsernameForMacWiFiName = possibleAdminUsername;
+
+                                    if (adminUsernameForMacWiFiName.equals("fg-admin") || adminUsernameForMacWiFiName.equals("Staff")) {
+                                        ArrayList<String> possibleAdminPasswordsForMacWiFiName = new ArrayList<>();
+                                        possibleAdminPasswordsForMacWiFiName.add(privateStrings.getCurrentFreeGeekPassword());
+                                        possibleAdminPasswordsForMacWiFiName.add(privateStrings.getPreviousFreeGeekPassword());
+                                        for (String thisPossibleAdminPasswordForMacWiFiName : possibleAdminPasswordsForMacWiFiName) {
+                                            if (new CommandReader("/usr/bin/dscl . -authonly '" + adminUsernameForMacWiFiName.replace("'", "'\\''") + "' '" + thisPossibleAdminPasswordForMacWiFiName.replace("'", "'\\''") + "' && echo '<CORRECT>'").getFirstOutputLine().equals("<CORRECT>")) {
+                                                adminPasswordForMacWiFiName = thisPossibleAdminPasswordForMacWiFiName;
+                                                break;
+                                            }
+                                        }
+                                    }
+
                                     for (String thisWiFiNetworkDeviceID : wiFiNetworkDeviceIDs) {
                                         String connectedWiFiNetworkStatus = new CommandReader(new String[]{"/usr/sbin/networksetup", "-getairportnetwork", thisWiFiNetworkDeviceID}).getFirstOutputLine();
                                         if (connectedWiFiNetworkStatus.startsWith("Current Wi-Fi Network: ")) {
                                             connectedWiFiNetworkName = connectedWiFiNetworkStatus.substring(connectedWiFiNetworkStatus.indexOf(": ") + 2);
-                                            break;
-                                        } else if (connectedWiFiNetworkStatus.equals("You are not associated with an AirPort network.")) { // "networksetup -getairportnetwork" always returns "You are not associated with an AirPort network." on macOS 15 Sequoia (presuably because of privacy reasons), but the current Wi-Fi network is still available from "system_profiler SPAirPortDataType"
-                                            connectedWiFiNetworkName = new CommandReader(new String[]{"/bin/bash", "-c", "/usr/libexec/PlistBuddy -c 'Print :0:_items:0:spairport_airport_interfaces:0:spairport_current_network_information:_name' /dev/stdin <<< \"$(/usr/sbin/system_profiler -xml SPAirPortDataType)\" 2> /dev/null"}).getFirstOutputLine();
-                                            if (!connectedWiFiNetworkName.isEmpty()) {
-                                                break;
+                                        } else if (connectedWiFiNetworkStatus.equals("You are not associated with an AirPort network.")) {
+                                            // Starting on macOS 15, "networksetup -getairportnetwork" will always output "You are not associated with an AirPort network." even when connected to a Wi-Fi network.
+                                            // So, fallback to using "ipconfig getsummary" instead.
+
+                                            connectedWiFiNetworkName = new CommandReader(new String[]{"/bin/bash", "-c", "/usr/sbin/ipconfig getsummary " + thisWiFiNetworkDeviceID + " | /usr/bin/awk -F ' SSID : ' '/ SSID : / { print $2; exit }'"}).getFirstOutputLine();
+
+                                            if (connectedWiFiNetworkName.equals("<redacted>")) {
+                                                if (!adminPasswordForMacWiFiName.isEmpty()) {
+                                                    // Starting with macOS 15.6, the Wi-Fi name on the "SSID" line of "ipconfig getsummary" will be "<redacted>" unless "ipconfig setverbose 1" is set, which must be run as root.
+                                                    // Apple support shared that "ipconfig setverbose 1" un-redacts the "ipconfig getsummary" output with a member of MacAdmins Slack who shared it there: https://macadmins.slack.com/archives/GA92U9YV9/p1757621890952369?thread_ts=1750227817.961659&cid=GA92U9YV9
+                                                    // NOTE: Only attempt to run as root is running on a Free Geek's Mac Test Boot (username "Staff") or a Free Geek macOS install (username "fg-admin") since those are the only times we would know the admin password.
+                                                    // Otherwise, do not bother prompting for admin password just to show the Wi-Fi name and display that connected to a Wi-Fi network without showing the actual Wi-Fi network name.name
+
+                                                    try {
+                                                        Runtime.getRuntime().exec(new String[]{"/usr/bin/osascript", "-e", "do shell script \"/usr/sbin/ipconfig setverbose 1\" user name \"" + adminUsernameForMacWiFiName.replace("\\", "\\\\").replace("\"", "\\\"") + "\" password \"" + adminPasswordForMacWiFiName.replace("\\", "\\\\").replace("\"", "\\\"") + "\" with administrator privileges"}).waitFor();
+                                                    } catch (IOException | InterruptedException ipconfigSetVerboseException) {
+                                                        if (isTestMode) {
+                                                            System.out.println("ipconfigSetVerboseException: " + ipconfigSetVerboseException);
+                                                        }
+                                                    }
+
+                                                    connectedWiFiNetworkName = new CommandReader(new String[]{"/bin/bash", "-c", "/usr/sbin/ipconfig getsummary " + thisWiFiNetworkDeviceID + " | /usr/bin/awk -F ' SSID : ' '/ SSID : / { print $2; exit }'"}).getFirstOutputLine();
+
+                                                    try {
+                                                        Runtime.getRuntime().exec(new String[]{"/usr/bin/osascript", "-e", "do shell script \"/usr/sbin/ipconfig setverbose 0\" user name \"" + adminUsernameForMacWiFiName.replace("\\", "\\\\").replace("\"", "\\\"") + "\" password \"" + adminPasswordForMacWiFiName.replace("\\", "\\\\").replace("\"", "\\\"") + "\" with administrator privileges"}).waitFor();
+                                                    } catch (IOException | InterruptedException ipconfigUnsetVerboseException) {
+                                                        if (isTestMode) {
+                                                            System.out.println("ipconfigUnsetVerboseException: " + ipconfigUnsetVerboseException);
+                                                        }
+                                                    }
+                                                } else if (System.getProperty("os.version").startsWith("15.6")) {
+                                                    // If on macOS 15.6 (or macOS 15.6.1), and not running on Free Geek installation of macOS where we know the admin password, can get Wi-Fi network name from "system_profiler SPAirPortDataType" without running a command as root, but that output is now also "<redacted>" on macOS 15.7 and macOS 26 and newer.
+                                                    connectedWiFiNetworkName = new CommandReader(new String[]{"/bin/bash", "-c", "/usr/libexec/PlistBuddy -c 'Print :0:_items:0:spairport_airport_interfaces:0:spairport_current_network_information:_name' /dev/stdin <<< \"$(/usr/sbin/system_profiler -xml SPAirPortDataType)\" 2> /dev/null"}).getFirstOutputLine();
+                                                }
                                             }
+                                        }
+
+                                        if (!connectedWiFiNetworkName.isEmpty()) {
+                                            break;
                                         }
                                     }
                                 } else if (isWindows) {
@@ -8999,12 +9151,45 @@ public class QAHelper extends javax.swing.JFrame {
                                                 String connectedWiFiNetworkStatus = new CommandReader(new String[]{"/usr/sbin/networksetup", "-getairportnetwork", thisWiFiNetworkDeviceID}).getFirstOutputLine();
                                                 if (connectedWiFiNetworkStatus.startsWith("Current Wi-Fi Network: ")) {
                                                     connectedWiFiNetworkName = connectedWiFiNetworkStatus.substring(connectedWiFiNetworkStatus.indexOf(": ") + 2);
-                                                    break;
-                                                } else if (connectedWiFiNetworkStatus.equals("You are not associated with an AirPort network.")) { // "networksetup -getairportnetwork" always returns "You are not associated with an AirPort network." on macOS 15 Sequoia (presuably because of privacy reasons), but the current Wi-Fi network is still available from "system_profiler SPAirPortDataType"
-                                                    connectedWiFiNetworkName = new CommandReader(new String[]{"/bin/bash", "-c", "/usr/libexec/PlistBuddy -c 'Print :0:_items:0:spairport_airport_interfaces:0:spairport_current_network_information:_name' /dev/stdin <<< \"$(/usr/sbin/system_profiler -xml SPAirPortDataType)\" 2> /dev/null"}).getFirstOutputLine();
-                                                    if (!connectedWiFiNetworkName.isEmpty()) {
-                                                        break;
+                                                } else if (connectedWiFiNetworkStatus.equals("You are not associated with an AirPort network.")) {
+                                                    // Starting on macOS 15, "networksetup -getairportnetwork" will always output "You are not associated with an AirPort network." even when connected to a Wi-Fi network.
+                                                    // So, fallback to using "ipconfig getsummary" instead.
+
+                                                    connectedWiFiNetworkName = new CommandReader(new String[]{"/bin/bash", "-c", "/usr/sbin/ipconfig getsummary " + thisWiFiNetworkDeviceID + " | /usr/bin/awk -F ' SSID : ' '/ SSID : / { print $2; exit }'"}).getFirstOutputLine();
+
+                                                    if (connectedWiFiNetworkName.equals("<redacted>")) {
+                                                        if (!adminPasswordForMacWiFiName.isEmpty()) {
+                                                            // Starting with macOS 15.6, the Wi-Fi name on the "SSID" line of "ipconfig getsummary" will be "<redacted>" unless "ipconfig setverbose 1" is set, which must be run as root.
+                                                            // Apple support shared that "ipconfig setverbose 1" un-redacts the "ipconfig getsummary" output with a member of MacAdmins Slack who shared it there: https://macadmins.slack.com/archives/GA92U9YV9/p1757621890952369?thread_ts=1750227817.961659&cid=GA92U9YV9
+                                                            // NOTE: Only attempt to run as root is running on a Free Geek's Mac Test Boot (username "Staff") or a Free Geek macOS install (username "fg-admin") since those are the only times we would know the admin password.
+                                                            // Otherwise, do not bother prompting for admin password just to show the Wi-Fi name and display that connected to a Wi-Fi network without showing the actual Wi-Fi network name.name
+
+                                                            try {
+                                                                Runtime.getRuntime().exec(new String[]{"/usr/bin/osascript", "-e", "do shell script \"/usr/sbin/ipconfig setverbose 1\" user name \"" + adminUsernameForMacWiFiName.replace("\\", "\\\\").replace("\"", "\\\"") + "\" password \"" + adminPasswordForMacWiFiName.replace("\\", "\\\\").replace("\"", "\\\"") + "\" with administrator privileges"}).waitFor();
+                                                            } catch (IOException | InterruptedException ipconfigSetVerboseException) {
+                                                                if (isTestMode) {
+                                                                    System.out.println("ipconfigSetVerboseException: " + ipconfigSetVerboseException);
+                                                                }
+                                                            }
+
+                                                            connectedWiFiNetworkName = new CommandReader(new String[]{"/bin/bash", "-c", "/usr/sbin/ipconfig getsummary " + thisWiFiNetworkDeviceID + " | /usr/bin/awk -F ' SSID : ' '/ SSID : / { print $2; exit }'"}).getFirstOutputLine();
+
+                                                            try {
+                                                                Runtime.getRuntime().exec(new String[]{"/usr/bin/osascript", "-e", "do shell script \"/usr/sbin/ipconfig setverbose 0\" user name \"" + adminUsernameForMacWiFiName.replace("\\", "\\\\").replace("\"", "\\\"") + "\" password \"" + adminPasswordForMacWiFiName.replace("\\", "\\\\").replace("\"", "\\\"") + "\" with administrator privileges"}).waitFor();
+                                                            } catch (IOException | InterruptedException ipconfigUnsetVerboseException) {
+                                                                if (isTestMode) {
+                                                                    System.out.println("ipconfigUnsetVerboseException: " + ipconfigUnsetVerboseException);
+                                                                }
+                                                            }
+                                                        } else if (System.getProperty("os.version").startsWith("15.6")) {
+                                                            // If on macOS 15.6 (or macOS 15.6.1), and not running on Free Geek installation of macOS where we know the admin password, can get Wi-Fi network name from "system_profiler SPAirPortDataType" without running a command as root, but that output is now also "<redacted>" on macOS 15.7 and macOS 26 and newer.
+                                                            connectedWiFiNetworkName = new CommandReader(new String[]{"/bin/bash", "-c", "/usr/libexec/PlistBuddy -c 'Print :0:_items:0:spairport_airport_interfaces:0:spairport_current_network_information:_name' /dev/stdin <<< \"$(/usr/sbin/system_profiler -xml SPAirPortDataType)\" 2> /dev/null"}).getFirstOutputLine();
+                                                        }
                                                     }
+                                                }
+
+                                                if (!connectedWiFiNetworkName.isEmpty()) {
+                                                    break;
                                                 }
                                             }
 
@@ -9150,7 +9335,7 @@ public class QAHelper extends javax.swing.JFrame {
                             resultsOutput += (connectedWiFiNetworkName.isEmpty()
                                     ? (isWindows ? ""
                                             : new TwemojiImage("Prohibited", qaHelperWindow).toImgTag("left") + " Failed to Connect to a Wi-Fi Network<br/><br/>")
-                                    : new TwemojiImage("AntennaBars", qaHelperWindow).toImgTag("left") + " Connected to Wi-Fi Network: " + connectedWiFiNetworkName + "<br/><br/>");
+                                    : new TwemojiImage("AntennaBars", qaHelperWindow).toImgTag("left") + " Connected to Wi-Fi Network" + (connectedWiFiNetworkName.equals("<redacted>") ? "" : (": " + escapeSingleLineSpecStringForHTML(connectedWiFiNetworkName))) + "<br/><br/>"); // Starting on macOS 26 (and macOS 15.7), "connectedWiFiNetworkName" will be "<redacted>" when connected to Wi-Fi so just show that connected and don't show any name.
 
                             resultsOutput += new TwemojiImage("MagnifyingGlassTiltedLeft", qaHelperWindow).toImgTag("left") + " Number of Wi-Fi Networks Detected: " + numberOfWiFiNetworksDetected;
 
@@ -9506,7 +9691,7 @@ public class QAHelper extends javax.swing.JFrame {
 //
 //                                    new QAScreenTestWindow(false).dispose();
 //                                }
-                                ArrayList<String> screenTestCompletedButtons = new ArrayList<>(Arrays.asList("Continue", ((!screenTestFinished || (hasTouchscreen && didTouchscreenTest)) ? "Test Screen Again" : "Continue to Touchscreen Test")));
+                                ArrayList<String> screenTestCompletedButtons = new ArrayList<>(Arrays.asList("Continue", ((screenTestFinished || (hasTouchscreen && didTouchscreenTest)) ? "Test Screen Again" : "Continue to Touchscreen Test")));
 
                                 if (!screenTestFinished || (hasTouchscreen && !didTouchscreenTest)) {
                                     Collections.reverse(screenTestCompletedButtons);
@@ -12306,11 +12491,15 @@ public class QAHelper extends javax.swing.JFrame {
                     + "<br/><br/><br/>"
                     + "<b>Test HDMI/DisplayPort/Mini DisplayPort:</b>"
                     + "<br/><br/>"
-                    + new TwemojiImage("ElectricPlug", qaHelperWindow).toImgTag("left") + " <u>Plug an external monitor into this computer</u> with an HDMI/DisplayPort/Mini DisplayPort cable."
-                    + "<br/><br/>"
-                    + new TwemojiImage("CheckBoxWithCheck", qaHelperWindow).toImgTag("left") + " If HDMI/DisplayPort/Mini DisplayPort is working correctly, you should <u>see this computers desktop picture on the external monitor</u>."
-                    + "<br/><br/>"
-                    + new TwemojiImage("BackhandIndexPointingRight", qaHelperWindow).toImgTag("left") + " <i>IF YOU DO NOT SEE THE DESKTOP PICTURE ON THE EXTERNAL MONITOR, INFORM AN INSTRUCTOR</i> " + new TwemojiImage("DoubleExclamationMark", qaHelperWindow).toImgTag("right")
+                    + ((isLinuxUbiquityMode || isWindowsPE) // Plugging in an external monitor in Ubiquity on Linux Mint 22.2 may freeze the system or make the mouse not work, so just always suggest doing the test in the full OS.
+                            ? (new TwemojiImage("Prohibited", qaHelperWindow).toImgTag("left") + " <b style='color: " + warningColorHTML + "'>DO NOT PLUG IN AN EXTERNAL MONITOR IN THIS PREINSTALLATION ENVIRONMENT</b> " + new TwemojiImage("DoubleExclamationMark", qaHelperWindow).toImgTag("right")
+                            + "<br/><br/>"
+                            + new TwemojiImage("BackhandIndexPointingRight", qaHelperWindow).toImgTag("left") + " <b style='color: " + attentionColorHTML + "'><i>PERFORM THIS TEST AFTER INSTALLING THE OS</i></b> " + new TwemojiImage("DoubleExclamationMark", qaHelperWindow).toImgTag("right"))
+                            : (new TwemojiImage("ElectricPlug", qaHelperWindow).toImgTag("left") + " <u>Plug an external monitor into this computer</u> with an HDMI/DisplayPort/Mini DisplayPort cable."
+                            + "<br/><br/>"
+                            + new TwemojiImage("CheckBoxWithCheck", qaHelperWindow).toImgTag("left") + " If HDMI/DisplayPort/Mini DisplayPort is working correctly, you should <u>see this computers desktop picture on the external monitor</u>."
+                            + "<br/><br/>"
+                            + new TwemojiImage("BackhandIndexPointingRight", qaHelperWindow).toImgTag("left") + " <i>IF YOU DO NOT SEE THE DESKTOP PICTURE ON THE EXTERNAL MONITOR, INFORM AN INSTRUCTOR</i> " + new TwemojiImage("DoubleExclamationMark", qaHelperWindow).toImgTag("right")))
                     + "</html>", "QA Helper  —  Check Ports", JOptionPane.INFORMATION_MESSAGE, new TwemojiImage("PuzzlePiece", qaHelperWindow).toImageIcon());
 
             if (!isPortsVerified && btnVerifyPorts.isVisible() && btnVerifyPorts.isEnabled()) {
@@ -13261,10 +13450,10 @@ public class QAHelper extends javax.swing.JFrame {
 
                                         if (new File("\\Install\\DPK\\oa3tool.exe").exists()) {
                                             ArrayList<String> productKeyTypeDialogButtons = new ArrayList<>();
-                                            productKeyTypeDialogButtons.add("Retrieve and Apply Commercial Refurbished DPK");
                                             if (!isWindowsHomeEdition) {
                                                 productKeyTypeDialogButtons.add("Retrieve and Apply Citizenship Refurbished DPK");
                                             }
+                                            productKeyTypeDialogButtons.add("Retrieve and Apply Commercial Refurbished DPK");
                                             productKeyTypeDialogButtons.add("Cancel");
 
                                             int productKeyTypeResponse = JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>Would you like to retrieve and apply a <u>Commercial</u>" + (!isWindowsHomeEdition ? " or <i>Citizenship</i>" : "") + " Refurbished Digital Product Key to license Windows?</b>" + (!isWindowsHomeEdition ? "<br/><br/>If you choose a <i>Citizenship</i> Refurbished DPK, this computer will ONLY be able to be distributed to ELIGIBLE organizations or individuals, and will NOT be able to be sold online.<br/><br/><u>Be sure to ONLY choose a <i>Citizenship</i> Refurbished DPK if specifically instructed to do so for this computer.</u>" : "") + "</html>", "QA Helper  —  " + (isWindowsHomeEdition ? "Confirm Refurbished DPK" : "Choose Refurbished DPK Type"), JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, new TwemojiImage("OldKey", qaHelperWindow).toImageIcon(32), productKeyTypeDialogButtons.toArray(), productKeyTypeDialogButtons.get(0));
@@ -14349,38 +14538,40 @@ public class QAHelper extends javax.swing.JFrame {
                                                         }
                                                     }
 
-                                                    for (;;) {
-                                                        String logRemoteManagedMacResult = new WebReader(privateStrings.getLogRemoteManagedMacURL(), logRemoteManagedMacParameters, 15).getFirstOutputLine();
-                                                        if (logRemoteManagedMacResult.endsWith("LOGGED")) {
-                                                            break;
+                                                    if (pid.startsWith("FG")) {
+                                                        for (;;) {
+                                                            String logRemoteManagedMacResult = new WebReader(privateStrings.getLogRemoteManagedMacURL(), logRemoteManagedMacParameters, 15).getFirstOutputLine();
+                                                            if (logRemoteManagedMacResult.endsWith("LOGGED")) {
+                                                                break;
+                                                            }
+
+                                                            if (logRemoteManagedMacResult.isEmpty()) {
+                                                                logRemoteManagedMacResult = "NO RESPONSE";
+                                                            }
+
+                                                            sendErrorEmail("Failed to Log Remote Managed Mac - " + logRemoteManagedMacResult);
+
+                                                            playAlertSound("error");
+
+                                                            JTextArea logRemoteManagedMacErrorTextArea = new JTextArea(5, 100);
+                                                            logRemoteManagedMacErrorTextArea.setText(logRemoteManagedMacResult);
+                                                            logRemoteManagedMacErrorTextArea.setEditable(false);
+                                                            logRemoteManagedMacErrorTextArea.setLineWrap(true);
+                                                            logRemoteManagedMacErrorTextArea.setWrapStyleWord(true);
+                                                            logRemoteManagedMacErrorTextArea.setFont(new Font(Font.MONOSPACED, lblVersion.getFont().getStyle(), logRemoteManagedMacErrorTextArea.getFont().getSize()));
+                                                            JScrollPane logRemoteManagedMacErrorScrollPane = new JScrollPane(logRemoteManagedMacErrorTextArea);
+
+                                                            JOptionPane.showOptionDialog(qaHelperWindow, new Object[]{"<html><b>Failed to Log Remote Managed Mac</b><br/><br/></html>",
+                                                                logRemoteManagedMacErrorScrollPane,
+                                                                "<html><br/><b>You must be connected to the internet to be able to log this Remote Managed Mac.</b><br/><br/>"
+                                                                + "Make sure you're connected to either a Wi-Fi network or plugged in with an Ethernet cable.<br/>"
+                                                                + "If this Mac does not have an Ethernet port, use a Thunderbolt or USB to Ethernet adapter.<br/>"
+                                                                + "Once you're connected to Wi-Fi or Ethernet, it may take a few moments for the internet connection to be established.<br/>"
+                                                                + "If it takes more than a few minutes, consult an instructor or inform Free Geek I.T.</html>"},
+                                                                    "QA Helper  —  Log Remote Managed Mac Error", JOptionPane.DEFAULT_OPTION, JOptionPane.ERROR_MESSAGE, null, new String[]{"Try Again"}, "Try Again");
+
+                                                            TimeUnit.SECONDS.sleep(1);
                                                         }
-
-                                                        if (logRemoteManagedMacResult.isEmpty()) {
-                                                            logRemoteManagedMacResult = "NO RESPONSE";
-                                                        }
-
-                                                        sendErrorEmail("Failed to Log Remote Managed Mac - " + logRemoteManagedMacResult);
-
-                                                        playAlertSound("error");
-
-                                                        JTextArea logRemoteManagedMacErrorTextArea = new JTextArea(5, 100);
-                                                        logRemoteManagedMacErrorTextArea.setText(logRemoteManagedMacResult);
-                                                        logRemoteManagedMacErrorTextArea.setEditable(false);
-                                                        logRemoteManagedMacErrorTextArea.setLineWrap(true);
-                                                        logRemoteManagedMacErrorTextArea.setWrapStyleWord(true);
-                                                        logRemoteManagedMacErrorTextArea.setFont(new Font(Font.MONOSPACED, lblVersion.getFont().getStyle(), logRemoteManagedMacErrorTextArea.getFont().getSize()));
-                                                        JScrollPane logRemoteManagedMacErrorScrollPane = new JScrollPane(logRemoteManagedMacErrorTextArea);
-
-                                                        JOptionPane.showOptionDialog(qaHelperWindow, new Object[]{"<html><b>Failed to Log Remote Managed Mac</b><br/><br/></html>",
-                                                            logRemoteManagedMacErrorScrollPane,
-                                                            "<html><br/><b>You must be connected to the internet to be able to log this Remote Managed Mac.</b><br/><br/>"
-                                                            + "Make sure you're connected to either a Wi-Fi network or plugged in with an Ethernet cable.<br/>"
-                                                            + "If this Mac does not have an Ethernet port, use a Thunderbolt or USB to Ethernet adapter.<br/>"
-                                                            + "Once you're connected to Wi-Fi or Ethernet, it may take a few moments for the internet connection to be established.<br/>"
-                                                            + "If it takes more than a few minutes, consult an instructor or inform Free Geek I.T.</html>"},
-                                                                "QA Helper  —  Log Remote Managed Mac Error", JOptionPane.DEFAULT_OPTION, JOptionPane.ERROR_MESSAGE, null, new String[]{"Try Again"}, "Try Again");
-
-                                                        TimeUnit.SECONDS.sleep(1);
                                                     }
 
                                                     String remoteManagementOrganizationContactInfoDisplay = "<i>NO CONTACT INFORMATION</i>";
@@ -14402,9 +14593,8 @@ public class QAHelper extends javax.swing.JFrame {
                                                             + "<ul style='margin-left: 20px'><li>" + remoteManagementOrganizationContactInfoDisplay + "</li></ul>"
                                                             + "<br/>"
                                                             + new TwemojiImage("IDButton", qaHelperWindow).toImgTag("left") + " The Serial Number for this Mac is <b>" + escapeSingleLineSpecStringForHTML(computerSpecs.getFullSerial()) + "</b>"
-                                                            + "<br/><br/><br/><center>"
-                                                            + new TwemojiImage("Memo", qaHelperWindow).toImgTag("left") + " <i>THIS MAC AND CONTACT INFO HAS BEEN LOGGED</i> " + new TwemojiImage("CheckMarkButton", qaHelperWindow).toImgTag("right")
-                                                            + "</center></html>", "QA Helper  —  Check Remote Management", JOptionPane.WARNING_MESSAGE, new TwemojiImage("LockedWithKey", qaHelperWindow).toImageIcon());
+                                                            + (pid.startsWith("FG") ? ("<br/><br/><br/><center>" + new TwemojiImage("Memo", qaHelperWindow).toImgTag("left") + " <i>THIS MAC AND CONTACT INFO HAS BEEN LOGGED</i> " + new TwemojiImage("CheckMarkButton", qaHelperWindow).toImgTag("right") + "</center>") : "")
+                                                            + "</html>", "QA Helper  —  Check Remote Management", JOptionPane.WARNING_MESSAGE, new TwemojiImage("LockedWithKey", qaHelperWindow).toImageIcon());
                                                 } else {
                                                     // TODO: Mark as removed if was previously Remote Managed like the other AppleScripts do now?
 
@@ -14654,7 +14844,7 @@ public class QAHelper extends javax.swing.JFrame {
                     + ((isLinuxLiveBoot || isMacTestBoot || deviceTypeIsMotherboard) ? "" : "         OS: " + computerSpecs.getFullOS() + "\n")
                     + "\n"
                     + "        CPU: " + computerSpecs.getFullCPU() + "\n"
-                    + "        RAM: " + computerSpecs.getFullRAM() + "\n"
+                    + "        RAM: " + (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()) + "\n"
                     + (deviceTypeHasScreen
                             ? ("     Screen: " + (screenErrorArray.isEmpty() ? "" : "• ") + computerSpecs.getFullScreenSize()
                             + (screenErrorArray.isEmpty() ? "" : ("\n             • " + String.join("\n             • ", screenErrorArray))) + "\n") : "")
@@ -14911,7 +15101,9 @@ public class QAHelper extends javax.swing.JFrame {
                     }
                 } else if (isLinux) {
                     if (new File("/usr/bin/mintreport").exists()) { // Open System Reports (which contains a detailed "System information" section).
-                        if (!new CommandReader(new String[]{"/usr/bin/wmctrl", "-l"}).getFirstOutputLineContaining("System Reports").isEmpty()) {
+                        if (!new CommandReader(new String[]{"/usr/bin/wmctrl", "-l"}).getFirstOutputLineContaining("System Information").isEmpty()) {
+                            Runtime.getRuntime().exec(new String[]{"/usr/bin/wmctrl", "-Fa", "System Information"}); // On Mint 22.3, "mintreport" will open the new detailed "System Information" app: https://www.linuxmint.com/rel_zena_whatsnew.php
+                        } else if (!new CommandReader(new String[]{"/usr/bin/wmctrl", "-l"}).getFirstOutputLineContaining("System Reports").isEmpty()) {
                             Runtime.getRuntime().exec(new String[]{"/usr/bin/wmctrl", "-Fa", "System Reports"});
                         } else {
                             Runtime.getRuntime().exec(new String[]{"/usr/bin/mintreport"});
@@ -14920,7 +15112,7 @@ public class QAHelper extends javax.swing.JFrame {
                         playAlertSound("beep");
                     }
 
-                    if (new File("/usr/bin/cinnamon-settings").exists()) { // "cinnamon-settings" won't exist on MATE, but if we are on Cinnamon ALSO open it.
+                    if (new File("/usr/bin/cinnamon-settings").exists() && !new File("/usr/bin/mintsysadm").exists()) { // "cinnamon-settings" won't exist on MATE, but if we are on Cinnamon ALSO open it. EXCEPT if on Mint 22.3 or newer (where new "mintsysadm" tool will also exist) since "cinnamon-settings info" no longer works and the updated "mintreport" has all the details.
                         if (!new CommandReader(new String[]{"/usr/bin/wmctrl", "-l"}).getFirstOutputLineContaining("System Info").isEmpty()) {
                             Runtime.getRuntime().exec(new String[]{"/usr/bin/wmctrl", "-Fa", "System Info"});
                         } else {
@@ -14968,6 +15160,10 @@ public class QAHelper extends javax.swing.JFrame {
     }//GEN-LAST:event_btnStatusHistoryActionPerformed
 
     private void btnCreditsActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnCreditsActionPerformed
+        if (isWindowsPE) {
+            setState(Frame.ICONIFIED);
+        }
+
         creditsWindow.showCreditsWindow();
 
         if (isTestMode && ((evt.getModifiers() & ActionEvent.ALT_MASK) == ActionEvent.ALT_MASK)) {
@@ -15270,7 +15466,8 @@ public class QAHelper extends javax.swing.JFrame {
                         mustSetProductType = false; // Do not force non-Free Geek technicians to set Product Type before "statusNames[12]" since it requires going to PCsCRM.com rather than an automated dropdown and may be done in bulk on another computer.
                     }
 
-                    String setStatusOrContinueOnFGSpecsButton = ((deviceTypeIsMotherboard && pid.startsWith("FG")) ? "Quit QA Helper & Continue on FG Specs" : "Set Status to \"" + statusNames[12] + "\"");
+                    boolean continueToFGSpecsInsteadOfSetStatus = (deviceTypeIsMotherboard && pid.startsWith("FG"));
+                    String setStatusOrContinueOnFGSpecsButton = (continueToFGSpecsInsteadOfSetStatus ? "Quit QA Helper & Continue on FG Specs" : "Set Status to \"" + statusNames[12] + "\"");
 
                     if (!mustSetProductType) { // Set Product Type will come first if Product Type must be set, otherwise Set Status will come first.
                         doneTestingDialogButtons.add(setStatusOrContinueOnFGSpecsButton);
@@ -15291,7 +15488,7 @@ public class QAHelper extends javax.swing.JFrame {
                     }
                     doneTestingDialogButtons.addAll(Arrays.asList("Shut Down", "Reboot", "Cancel"));
 
-                    int doneTestingDialogResponse = JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>What would you like to do next?</b>" + (didSetProductType ? "" : ("<br/><br/><i>Before setting status to \"" + statusNames[12] + "\", you must set the correct Product Type for this computer" + (pid.startsWith("FG") ? (".</i>") : " on PCsCRM.com.</i>"))) + (pid.startsWith("FG") ? "<br/><br/><b>Current Product Type:</b> " + currentStatusAndProductType.get("Product Type") : "") + "</html>", "QA Helper  —  Done Testing", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, doneTestingDialogButtons.toArray(), doneTestingDialogButtons.get(0));
+                    int doneTestingDialogResponse = JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>What would you like to do next?</b>" + (didSetProductType ? "" : ("<br/><br/><i>Before " + (continueToFGSpecsInsteadOfSetStatus ? "continuing on FG Specs" : "setting status to \"" + statusNames[12] + "\"") + ", you must set the correct Product Type" + (pid.startsWith("FG") ? (".</i>") : " on PCsCRM.com.</i>"))) + (pid.startsWith("FG") ? "<br/><br/><b>Current Product Type:</b> " + currentStatusAndProductType.get("Product Type") : "") + "</html>", "QA Helper  —  Done Testing", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, doneTestingDialogButtons.toArray(), doneTestingDialogButtons.get(0));
 
                     String doneTestingResponseString = "Cancel";
                     if (doneTestingDialogResponse > -1) {
@@ -15542,9 +15739,9 @@ public class QAHelper extends javax.swing.JFrame {
                                                                 deletedCorruptAptCacheFiles.add(corruptedFilePath);
                                                             }
                                                         }
-                                                    } else if (!ignoreAptCacheError && (pid.startsWith("D") || !pid.contains("-")) && thisAptOutputLine.startsWith("E: Failed to fetch ") && thisAptOutputLine.endsWith(" Clearsigned file isn't valid, got 'NOSPLIT' (does the network require authentication?)")) {
-                                                        // Don't know what is going on with their network, but this error always happens at a PCs for People location in Denver, so just ignore it and allow "statusNames[12]" anyway.
-                                                        // This is also happening at the new PCs for People location in Seattle, which currently uses all-numeric PIDs.
+                                                    } else if (!ignoreAptCacheError && (pid.startsWith("D") || pid.startsWith("WA") || !pid.contains("-")) && thisAptOutputLine.startsWith("E: Failed to fetch ") && thisAptOutputLine.endsWith(" Clearsigned file isn't valid, got 'NOSPLIT' (does the network require authentication?)")) {
+                                                        // Don't know what is going on with their network, but this error always happens at a PCs for People location in Denver (IDs starting with "D"), so just ignore it and allow "statusNames[12]" anyway.
+                                                        // This is also happening at the PCs for People location in Seattle (IDs starting with "WA", and previously all-numeric PIDs).
                                                         ignoreAptCacheError = true;
                                                     }
                                                 }
@@ -16084,10 +16281,7 @@ public class QAHelper extends javax.swing.JFrame {
                         String fgSpecsURL = privateStrings.getFreeGeekSpecsURL(pid, isTestMode);
 
                         try {
-                            String loginPassword = new String(pswPassword.getPassword());
-                            if (loginPassword.equals("intern")) {
-                                loginPassword = privateStrings.getInternPassword();
-                            }
+                            String loginPassword = new String(pswPassword.getPassword()); // DO NOT need to convert "intern" password since FG Specs will handle that.
 
                             File fgSpecsTempFile = File.createTempFile("qa_helper-fg_specs", ".html");
                             fgSpecsTempFile.deleteOnExit();
@@ -16212,6 +16406,7 @@ public class QAHelper extends javax.swing.JFrame {
 
             displayComputerSpecs();
         } else {
+            menForceShowAllTests.setSelected(forceShowAllTests);
             playAlertSound("beep");
         }
     }//GEN-LAST:event_menForceShowAllTestsActionPerformed
@@ -16305,7 +16500,7 @@ public class QAHelper extends javax.swing.JFrame {
                                 getAppleModelParameters.put("format", "text");
                                 getAppleModelParameters.put("serial", thisSpecValue);
                                 getAppleModelParameters.put("model_id", computerSpecs.getMacModelIdentifier());
-                                String[] modelInfoLines = new WebReader(privateStrings.getFreeGeekAPI("apple-model", isTestMode), getAppleModelParameters).getOutputLines();
+                                String[] modelInfoLines = new WebReader(privateStrings.getFreeGeekAPIurl("apple-model", isTestMode), getAppleModelParameters).getOutputLines();
                                 // If is a 10-character random serial without a config code, won't be able to get the Specs ID from the serial, so also pass the Model ID as a fallback check.
                                 String docsURL = "";
                                 String specsURL = "";
@@ -16347,9 +16542,91 @@ public class QAHelper extends javax.swing.JFrame {
                     } else if (isID) {
                         if (thisSpecValue.startsWith("FG")) {
                             specSearchURL = privateStrings.getFreeGeekSpecsURL(thisSpecValue, isTestMode);
+
+                            if (isLoggedIn) {
+                                try {
+                                    String loginPassword = new String(pswPassword.getPassword()); // DO NOT need to convert "intern" password since FG Specs will handle that.
+
+                                    File fgSpecsTempFile = File.createTempFile("qa_helper-fg_specs", ".html");
+                                    fgSpecsTempFile.deleteOnExit();
+
+                                    try (BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(fgSpecsTempFile))) {
+                                        bufferedWriter.write("<!DOCTYPE html>"
+                                                + "<html>"
+                                                + "<head><title>FG Specs</title></head>"
+                                                + "<body onload=\"javascript:document.getElementById('fgSpecsLogin').submit();\">"
+                                                + "<form id=\"fgSpecsLogin\" method=\"post\" action=\"" + specSearchURL + "\">"
+                                                + "<input name=\"username\" type=\"hidden\" value=\"" + username + "\" />"
+                                                + "<input name=\"password\" type=\"hidden\" value=\"" + loginPassword + "\" />"
+                                                + "<input name=\"login\" type=\"hidden\" value=\"Log In\" />"
+                                                + "</form>"
+                                                + "</body>"
+                                                + "</html>");
+                                    } catch (Exception writeFGSpecsTempFileException) {
+                                        if (isTestMode) {
+                                            System.out.println("writeFGSpecsTempFileException: " + writeFGSpecsTempFileException);
+                                        }
+                                    }
+
+                                    specSearchURL = fgSpecsTempFile.toURI().toString();
+                                } catch (IOException createFGSpecsTempFileException) {
+                                    if (isTestMode) {
+                                        System.out.println("createFGSpecsTempFileException: " + createFGSpecsTempFileException);
+                                    }
+                                }
+                            }
                         } else {
                             Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(thisSpecValue), null);
                             specSearchURL = "https://" + (isTestMode ? "test." : "") + "pcscrm.com/contact/pidsearch";
+
+                            if (isLoggedIn) {
+                                String hiddenPCsCRMloginInputs = "";
+
+                                for (int i = 0; i < 5; i++) {
+                                    hiddenPCsCRMloginInputs = String.join("\n", new WebReader(specSearchURL).getOutputLinesContaining("<input type=\"hidden\""));
+
+                                    if (!hiddenPCsCRMloginInputs.isEmpty()) {
+                                        break;
+                                    }
+                                }
+
+                                if (!hiddenPCsCRMloginInputs.isEmpty()) {
+                                    try {
+                                        File pcsCrmPidSearchTempFile = File.createTempFile("qa_helper-pcscrm_pid_search", ".html");
+                                        pcsCrmPidSearchTempFile.deleteOnExit();
+
+                                        try (BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(pcsCrmPidSearchTempFile))) {
+                                            String loginPassword = new String(pswPassword.getPassword());
+                                            if (loginPassword.equals("intern")) {
+                                                loginPassword = privateStrings.getInternPassword();
+                                            }
+
+                                            bufferedWriter.write("<!DOCTYPE html>"
+                                                    + "<html>"
+                                                    + "<head><title>New Login Page</title></head>"
+                                                    + "<body onload=\"javascript:document.getElementById('pcscrmLogInToPidSearch').submit();\">"
+                                                    + "<form id=\"pcscrmLogInToPidSearch\" action=\"https://" + (isTestMode ? "test." : "") + "pcscrm.com/login.aspx?ReturnUrl=%2fcontact%2fpidsearch\" method=\"post\">"
+                                                    + "<input type=\"hidden\" name=\"__EVENTTARGET\" id=\"__EVENTTARGET\" value=\"lbLogin\">"
+                                                    + hiddenPCsCRMloginInputs
+                                                    + "<input name=\"txtUsername\" type=\"hidden\" id=\"txtUsername\" value=\"" + username + "\" />"
+                                                    + "<input name=\"txtPassword\" type=\"hidden\" id=\"txtPassword\" value=\"" + loginPassword + "\" />"
+                                                    + "</form>"
+                                                    + "</body>"
+                                                    + "</html>");
+                                        } catch (Exception writePcsCrmPidSearchTempFileException) {
+                                            if (isTestMode) {
+                                                System.out.println("writePcsCrmPidSearchTempFileException: " + writePcsCrmPidSearchTempFileException);
+                                            }
+                                        }
+
+                                        specSearchURL = pcsCrmPidSearchTempFile.toURI().toString();
+                                    } catch (IOException createPcsCrmPidSearchTempFileException) {
+                                        if (isTestMode) {
+                                            System.out.println("createPcsCrmPidSearchTempFileException: " + createPcsCrmPidSearchTempFileException);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -16844,7 +17121,7 @@ public class QAHelper extends javax.swing.JFrame {
     private javax.swing.JPopupMenu.Separator installAppsMenuSeparator;
     private javax.swing.JLabel lblAudio;
     private javax.swing.JLabel lblAudioLabel;
-    private javax.swing.JLabel lblBatteryCapacity;
+    private javax.swing.JLabel lblBatteryHealth;
     private javax.swing.JLabel lblCPU;
     private javax.swing.JLabel lblCPULabel;
     private javax.swing.JLabel lblDiscDrive;

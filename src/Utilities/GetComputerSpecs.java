@@ -82,6 +82,8 @@ public final class GetComputerSpecs {
     private int cpuThreadCount = 0;
     private String ram = "N/A";
     private String fullRAM = "N/A";
+    private String motherboardRAM = "N/A";
+    private String fullMotherboardRAM = "N/A";
     private String storage = "N/A";
     private final ArrayList<String> storageArray = new ArrayList<>();
     private String storageSerial = "";
@@ -259,6 +261,8 @@ public final class GetComputerSpecs {
             cpuThreadCount = 0;
             ram = "N/A";
             fullRAM = "N/A";
+            motherboardRAM = "N/A";
+            fullMotherboardRAM = "N/A";
             storage = "N/A";
             storageArray.clear();
             storageSerial = "";
@@ -834,7 +838,7 @@ public final class GetComputerSpecs {
                                 cpuCount = thisLscpuProperty;
                             } else if (cpuBrand.isEmpty() && thisLscpuLine.startsWith("Vendor ID:")) {
                                 cpuBrand = cleanCPU(thisLscpuProperty);
-                            } else if (cpu.equals("N/A") && thisLscpuLine.startsWith("Model name:")) {
+                            } else if (cpu.equals("N/A") && thisLscpuLine.startsWith("Model name:") && !thisLscpuProperty.equals("-")) {
                                 cpu = cleanCPU(thisLscpuProperty);
                             } else if (thisLscpuLine.startsWith("CPU MHz:")) {
                                 // Update this even if it's already filled because the first time it was below 1000 MHz
@@ -1115,8 +1119,14 @@ public final class GetComputerSpecs {
                 for (String thisNetworkDeviceInfoLine : allNetworkDeviceInfo) {
                     if (thisNetworkDeviceInfoLine.startsWith("GENERAL.VENDOR:")) {
                         thisNetworkDeviceBrand = cleanDeviceBrand(thisNetworkDeviceInfoLine.substring(thisNetworkDeviceInfoLine.indexOf(":") + 1).trim()).replace("(", "[").replace(")", "]");
+                        if (thisNetworkDeviceBrand.equals("--")) { // "nmcli" will fill empty values with "--" (example: http://polarhome.com/service/man/?qf=nmcli-examples&af=0&tf=2&of=RedHat)
+                            thisNetworkDeviceBrand = "";
+                        }
                     } else if (thisNetworkDeviceInfoLine.startsWith("GENERAL.PRODUCT:")) {
                         thisNetworkDeviceModel = cleanDeviceModel(thisNetworkDeviceInfoLine.substring(thisNetworkDeviceInfoLine.indexOf(":") + 1).trim()).replace("(", "[").replace(")", "]");
+                        if (thisNetworkDeviceModel.equals("--")) { // "nmcli" will fill empty values with "--" (example: http://polarhome.com/service/man/?qf=nmcli-examples&af=0&tf=2&of=RedHat)
+                            thisNetworkDeviceModel = "";
+                        }
                     } else if (thisNetworkDeviceInfoLine.startsWith("GENERAL.HWADDR:")) {
                         thisNetworkDeviceMAC = thisNetworkDeviceInfoLine.substring(thisNetworkDeviceInfoLine.indexOf(":") + 1).trim().toUpperCase();
                     } else if (thisNetworkDeviceInfoLine.startsWith("GENERAL.TYPE:")) {
@@ -1128,6 +1138,8 @@ public final class GetComputerSpecs {
 
                             if (!thisNetworkDeviceModel.isEmpty()) {
                                 thisWifiInfo += " (" + ((thisNetworkDeviceBrand.isEmpty() || thisNetworkDeviceModel.startsWith(thisNetworkDeviceBrand)) ? thisNetworkDeviceModel : (thisNetworkDeviceBrand + " " + thisNetworkDeviceModel)) + ")";
+                            } else if (!thisNetworkDeviceBrand.isEmpty()) {
+                                thisWifiInfo += " (" + thisNetworkDeviceBrand + ")";
                             }
 
                             wirelessArray.add(thisWifiInfo);
@@ -1658,120 +1670,123 @@ public final class GetComputerSpecs {
                 String[] allPowerSources = new CommandReader(new String[]{"/usr/bin/upower", "-e"}).getOutputLines();
 
                 for (String thisPowerSource : allPowerSources) {
-                    String[] thisBatteryInfo = new CommandReader(new String[]{"/usr/bin/upower", "-i", thisPowerSource}).getOutputLines();
+                    if (!thisPowerSource.endsWith("/DisplayDevice")) { // Ignore the "DisplayDevice": https://upower.freedesktop.org/docs/UPower.html#UPower.GetDisplayDevice
+                        String[] thisBatteryInfo = new CommandReader(new String[]{"/usr/bin/upower", "-i", thisPowerSource}).getOutputLines();
 
-                    String thisBatteryVendor = "";
-                    String thisBatteryModel = "";
-                    String thisBatteryState = "";
-                    String thisBatteryEnergy = "";
-                    String thisBatteryEnergyFull = "";
-                    String thisBatteryEnergyRate = "";
-                    String thisBatteryVoltage = "";
-                    String thisBatteryChargeCycles = "";
-                    String thisBatteryPercentage = "";
-                    String thisBatteryCapacity = "";
+                        String thisBatteryVendor = "";
+                        String thisBatteryModel = "";
+                        String thisBatteryState = "";
+                        String thisBatteryEnergy = "";
+                        String thisBatteryEnergyFull = "";
+                        String thisBatteryEnergyRate = "";
+                        String thisBatteryVoltage = "";
+                        String thisBatteryChargeCycles = "";
+                        String thisBatteryPercentage = "";
+                        String thisBatteryCapacity = "";
 
-                    for (String thisBatteryInfoLine : thisBatteryInfo) {
-                        if (thisBatteryInfoLine.startsWith("  vendor:")) {
-                            thisBatteryVendor = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
-                        } else if (thisBatteryInfoLine.startsWith("  model:")) {
-                            thisBatteryModel = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
-                        } else if (thisBatteryInfoLine.startsWith("    state:")) {
-                            thisBatteryState = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
-                        } else if (thisBatteryInfoLine.startsWith("    energy:")) {
-                            thisBatteryEnergy = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
-                        } else if (thisBatteryInfoLine.startsWith("    energy-full:")) {
-                            thisBatteryEnergyFull = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
-                        } else if (thisBatteryInfoLine.startsWith("    energy-rate:")) {
-                            thisBatteryEnergyRate = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
-                        } else if (thisBatteryInfoLine.startsWith("    voltage:")) {
-                            try {
-                                double batteryVoltageDouble = Double.parseDouble(thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).replaceAll("[^0-9.]", ""));
-                                thisBatteryVoltage = new DecimalFormat("#.#").format(batteryVoltageDouble) + " V";
+                        for (String thisBatteryInfoLine : thisBatteryInfo) {
+                            if (thisBatteryInfoLine.startsWith("  vendor:")) {
+                                thisBatteryVendor = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                            } else if (thisBatteryInfoLine.startsWith("  model:")) {
+                                thisBatteryModel = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                            } else if (thisBatteryInfoLine.startsWith("    state:")) {
+                                thisBatteryState = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                            } else if (thisBatteryInfoLine.startsWith("    energy:")) {
+                                thisBatteryEnergy = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                            } else if (thisBatteryInfoLine.startsWith("    energy-full:")) {
+                                thisBatteryEnergyFull = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                            } else if (thisBatteryInfoLine.startsWith("    energy-rate:")) {
+                                thisBatteryEnergyRate = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                            } else if (thisBatteryInfoLine.startsWith("    voltage:")) {
+                                try {
+                                    double batteryVoltageDouble = Double.parseDouble(thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).replaceAll("[^0-9.]", ""));
+                                    thisBatteryVoltage = new DecimalFormat("#.#").format(batteryVoltageDouble) + " V";
 
-                                String thisBatteryDesignVoltage = batteryDesignVoltages.get(thisBatteryVendor + " " + thisBatteryModel);
+                                    String thisBatteryDesignVoltage = batteryDesignVoltages.get(thisBatteryVendor + " " + thisBatteryModel);
 
-                                if (thisBatteryDesignVoltage != null) {
-                                    double batteryDesignVoltageDouble = Double.parseDouble(thisBatteryDesignVoltage);
+                                    if (thisBatteryDesignVoltage != null) {
+                                        double batteryDesignVoltageDouble = Double.parseDouble(thisBatteryDesignVoltage);
 
-                                    if (batteryVoltageDouble < (batteryDesignVoltageDouble - 0.1)) {
-                                        batteryHealthWarningArray.add("Low Voltage");
-                                        thisBatteryVoltage += " of " + new DecimalFormat("#.#").format(batteryDesignVoltageDouble) + " V";
+                                        if (batteryVoltageDouble < (batteryDesignVoltageDouble - 0.1)) {
+                                            batteryHealthWarningArray.add("Low Voltage");
+                                            thisBatteryVoltage += " of " + new DecimalFormat("#.#").format(batteryDesignVoltageDouble) + " V";
+                                        }
+                                    }
+                                } catch (NumberFormatException batteryVoltageException) {
+                                    thisBatteryVoltage = "";
+
+                                    if (isTestMode) {
+                                        System.out.println("batteryVoltageException: " + batteryVoltageException);
                                     }
                                 }
-                            } catch (NumberFormatException batteryVoltageException) {
-                                thisBatteryVoltage = "";
+                            } else if (thisBatteryInfoLine.startsWith("    charge-cycles:")) {
+                                thisBatteryChargeCycles = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                            } else if (thisBatteryInfoLine.startsWith("    percentage:")) {
+                                thisBatteryPercentage = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
+                            } else if (thisBatteryInfoLine.startsWith("    capacity:")) {
+                                try {
+                                    double thisBatteryCapacityDouble = Double.parseDouble(thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).replaceAll("[^0-9.]", ""));
+                                    thisBatteryCapacity = new DecimalFormat("#.#").format(thisBatteryCapacityDouble) + "%";
 
-                                if (isTestMode) {
-                                    System.out.println("batteryVoltageException: " + batteryVoltageException);
+                                    if (thisBatteryCapacity.startsWith("0") || thisBatteryEnergyFull.startsWith("0")) { // Also make sure "energy-full" is non-zero to not incorrectly trust a "100%" capacity when the "energy-full" is zero. 
+                                        thisBatteryCapacity = "NO POWER";
+                                        batteryHealthErrorArray.add("No Power");
+                                    } else if (thisBatteryCapacityDouble < 40) {
+                                        batteryHealthErrorArray.add("Capacity < 40%");
+                                    } else if (thisBatteryCapacityDouble < 60) {
+                                        batteryHealthWarningArray.add("Capacity < 60%");
+                                    } else if (thisBatteryCapacity.equals("100%") && brand.equals("HP")) { // Some HP firmwares list their design capacity as whatever the full charge capacity is always resulting in exactly "100%" capacity. Sometimes updating firmware can correct this.
+                                        thisBatteryCapacity = "UNKNOWN CAPACITY";
+                                        batteryHealthWarningArray.add("HP Firmware Update Required for Accurate Battery Percentage");
+                                    }
+                                } catch (NumberFormatException batteryCapacityException) {
+                                    thisBatteryCapacity = "";
+
+                                    if (isTestMode) {
+                                        System.out.println("batteryCapacityException: " + batteryCapacityException);
+                                    }
                                 }
                             }
-                        } else if (thisBatteryInfoLine.startsWith("    charge-cycles:")) {
-                            thisBatteryChargeCycles = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
-                        } else if (thisBatteryInfoLine.startsWith("    percentage:")) {
-                            thisBatteryPercentage = thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).trim();
-                        } else if (thisBatteryInfoLine.startsWith("    capacity:")) {
-                            try {
-                                double batteryCapacityDouble = Double.parseDouble(thisBatteryInfoLine.substring(thisBatteryInfoLine.indexOf(":") + 1).replaceAll("[^0-9.]", ""));
-                                thisBatteryCapacity = new DecimalFormat("#.#").format(batteryCapacityDouble) + "%";
+                        }
 
-                                if (batteryCapacityDouble < 51) {
-                                    batteryHealthErrorArray.add("Capacity <= 50%");
-                                } else if (batteryCapacityDouble < 71) {
-                                    batteryHealthWarningArray.add("Capacity <= 70%");
-                                } else if ((batteryCapacityDouble == 100) && brand.equals("HP")) {
-                                    thisBatteryCapacity = "UNKNOWN CAPACITY (Update HP Firmware)";
-                                    batteryHealthWarningArray.add("HP Firmware Update Required for Accurate Battery Percentage");
+                        String thisBatteryCycleCount = "";
+
+                        try {
+                            int batteryCycleCount = Integer.parseInt(thisBatteryChargeCycles);
+                            if (batteryCycleCount > 0) {
+                                thisBatteryCycleCount = batteryCycleCount + " Cycle" + ((batteryCycleCount == 1) ? "" : "s");
+
+                                if (batteryCycleCount >= 1000) {
+                                    batteryHealthErrorArray.add("Cycles >= 1000");
+                                } else if (batteryCycleCount >= 800) {
+                                    batteryHealthWarningArray.add("Cycles >= 800");
                                 }
-                            } catch (NumberFormatException batteryCapacityException) {
+                            }
+                        } catch (NumberFormatException batteryCycleCountException) {
+                            if (isTestMode) {
+                                System.out.println("batteryCycleCountException: " + batteryCycleCountException);
+                            }
+                        }
+
+                        if (thisBatteryEnergy.startsWith("0") && thisBatteryEnergyRate.startsWith("0") && thisBatteryPercentage.startsWith("0")) {
+                            // Even if the capacity is not "0%", the battery may still be dead with no energy charging or discharging.
+                            // Checking "startsWith("0")" because I have seen dead batteries show "energy" of "0.123 Wh" or "energy-rate" of "0.123 W".
+
+                            if (thisBatteryVoltage.startsWith("0")) { // If voltage is 0, there may be NO BATTERY installed as I've seen some systems list a battery with all zero values when no battery is installed.
                                 thisBatteryCapacity = "";
-
-                                if (isTestMode) {
-                                    System.out.println("batteryCapacityException: " + batteryCapacityException);
-                                }
+                            } else if (!thisBatteryCapacity.equals("NO POWER")) { // Otherwise, if there is no charge and no energy (charging or draining) then this is probably a DEAD BATTERY.
+                                thisBatteryCapacity = "NO POWER";
+                                batteryHealthErrorArray.add("No Power");
                             }
                         }
-                    }
 
-                    String thisBatteryCycleCount = "";
-
-                    try {
-                        int batteryCycleCount = Integer.parseInt(thisBatteryChargeCycles);
-                        if (batteryCycleCount > 0) {
-                            thisBatteryCycleCount = batteryCycleCount + " Cycle" + ((batteryCycleCount == 1) ? "" : "s");
-
-                            if (batteryCycleCount >= 1000) {
-                                batteryHealthErrorArray.add("Cycles >= 1000");
-                            } else if (batteryCycleCount >= 800) {
-                                batteryHealthWarningArray.add("Cycles >= 800");
+                        if (!thisBatteryCapacity.isEmpty()) {
+                            if ((thisBatteryState.equals("charging") || thisBatteryState.equals("pending-charge")) && thisBatteryEnergyRate.startsWith("0") && !thisBatteryPercentage.equals("100%")) {
+                                batteryHealthWarningArray.add("Not Charging");
                             }
-                        }
-                    } catch (NumberFormatException batteryCycleCountException) {
-                        if (isTestMode) {
-                            System.out.println("batteryCycleCountException: " + batteryCycleCountException);
-                        }
-                    }
 
-                    if (thisBatteryCapacity.equals("100%") && thisBatteryEnergy.equals("0 Wh") && thisBatteryEnergyRate.equals("0 W") && thisBatteryPercentage.equals("0%")) {
-                        // Some systems (specifically HPs) show valid "energy-full" values and a "capacity" of "100%" even if there is NO BATTERY,
-                        // so ignore any battery values that have a "capacity" of "100%", current "energy" of "0 Wh", "energy-rate" of "0 W", and a "percentage" of "0%".
-
-                        if (!brand.equals("HP")) { // Already set note to update firmware for HPs with 100% capacity.
-                            thisBatteryCapacity = "";
+                            batteryHealthArray.add(thisBatteryCapacity + (thisBatteryVoltage.isEmpty() ? (thisBatteryCycleCount.isEmpty() ? "" : " (" + thisBatteryCycleCount + ")") : " (" + (thisBatteryCycleCount.isEmpty() ? "" : thisBatteryCycleCount + ", ") + thisBatteryVoltage + ")"));
                         }
-                    }
-
-                    if (!thisBatteryCapacity.isEmpty()) {
-                        if ((thisBatteryState.equals("charging") || thisBatteryState.equals("pending-charge")) && thisBatteryPercentage.startsWith("0") && thisBatteryEnergyRate.startsWith("0")) {
-                            batteryHealthWarningArray.add("Not Charging");
-                        }
-
-                        if (thisBatteryEnergyFull.equals("0 Wh")) {
-                            thisBatteryCapacity = "0%";
-                            batteryHealthErrorArray.add("Capacity 0%");
-                        }
-
-                        batteryHealthArray.add(thisBatteryCapacity + (thisBatteryVoltage.isEmpty() ? (thisBatteryCycleCount.isEmpty() ? "" : " (" + thisBatteryCycleCount + ")") : " (" + (thisBatteryCycleCount.isEmpty() ? "" : thisBatteryCycleCount + ", ") + thisBatteryVoltage + ")"));
                     }
                 }
 
@@ -1952,7 +1967,7 @@ public final class GetComputerSpecs {
                     + "Get-CimInstance Win32_Battery -Property DesignVoltage,EstimatedChargeRemaining | Format-List DesignVoltage,EstimatedChargeRemaining;"
                     // BatteryStatus
                     + "Write-Output 'Windows Hardware Info Class = BatteryStatus';"
-                    + "Get-CimInstance BatteryStatus -Namespace ROOT\\WMI -Property ChargeRate,Charging,DischargeRate,RemainingCapacity,Voltage | Format-List ChargeRate,Charging,DischargeRate,RemainingCapacity,Voltage;"
+                    + "Get-CimInstance BatteryStatus -Namespace ROOT\\WMI -Property ChargeRate,Charging,DischargeRate,Voltage | Format-List ChargeRate,Charging,DischargeRate,Voltage;"
                     // BatteryStaticData
                     + "Write-Output 'Windows Hardware Info Class = BatteryStaticData';" // For some reason, using Get-CimInstance instead of Get-WmiObject for this class always fails.
                     + "Get-WmiObject -Namespace ROOT\\WMI -Query 'SELECT DesignedCapacity FROM BatteryStaticData' | Format-List DesignedCapacity;"
@@ -2007,7 +2022,6 @@ public final class GetComputerSpecs {
                 ArrayList<String> windowsBatteryChargeRates = new ArrayList<>();
                 ArrayList<String> windowsBatteryChargingStatuses = new ArrayList<>();
                 ArrayList<String> windowsBatteryDischargeRates = new ArrayList<>();
-                ArrayList<String> windowsBatteryRemainingCapacities = new ArrayList<>();
                 ArrayList<String> windowsBatteryCurrentVoltages = new ArrayList<>();
                 ArrayList<String> windowsBatteryDesignCapacities = new ArrayList<>();
                 ArrayList<String> windowsBatteryFullChargeCapacities = new ArrayList<>();
@@ -2037,7 +2051,7 @@ public final class GetComputerSpecs {
                                     if (thisWindowsHardwareInfoLine.startsWith("Caption")) {
                                         os = thisWindowsHardwareInfoProperty.replace("Microsoft", "").trim();
                                     } else if (thisWindowsHardwareInfoLine.startsWith("OSArchitecture")) {
-                                        os += " (" + thisWindowsHardwareInfoProperty + ")";
+                                        os += " (" + thisWindowsHardwareInfoProperty.replace(" Processor", "") + ")";
                                     } else if (thisWindowsHardwareInfoLine.startsWith("BuildNumber")) {
                                         osBuildNumber = thisWindowsHardwareInfoProperty;
                                     }
@@ -2845,8 +2859,6 @@ public final class GetComputerSpecs {
                                         windowsBatteryChargingStatuses.add(thisWindowsHardwareInfoProperty);
                                     } else if (thisWindowsHardwareInfoLine.startsWith("DischargeRate")) {
                                         windowsBatteryDischargeRates.add(thisWindowsHardwareInfoProperty);
-                                    } else if (thisWindowsHardwareInfoLine.startsWith("RemainingCapacity")) {
-                                        windowsBatteryRemainingCapacities.add(thisWindowsHardwareInfoProperty);
                                     } else if (thisWindowsHardwareInfoLine.startsWith("Voltage")) {
                                         windowsBatteryCurrentVoltages.add(thisWindowsHardwareInfoProperty);
                                     }
@@ -3084,29 +3096,30 @@ public final class GetComputerSpecs {
                 }
 
                 if (!windowsBatteryDesignCapacities.isEmpty()) {
-                    if (windowsBatteryDesignCapacities.size() == windowsBatteryFullChargeCapacities.size()) {
+                    if (windowsBatteryFullChargeCapacities.size() == windowsBatteryDesignCapacities.size()) {
                         for (int i = 0; i < windowsBatteryDesignCapacities.size(); i++) {
                             String thisBatteryCapacity = "";
-                            double batteryCapacityDouble = 0;
 
                             try {
                                 double thisBatteryDesignCapacity = Double.parseDouble(windowsBatteryDesignCapacities.get(i));
                                 double thisBatteryFullChargeCapacity = Double.parseDouble(windowsBatteryFullChargeCapacities.get(i));
 
+                                double thisBatteryCapacityDouble = 0;
                                 if (thisBatteryDesignCapacity > 0 && thisBatteryFullChargeCapacity > 0) {
-                                    batteryCapacityDouble = ((thisBatteryFullChargeCapacity / thisBatteryDesignCapacity) * 100);
-                                } else {
-                                    batteryHealthErrorArray.add("Capacity 0%");
+                                    thisBatteryCapacityDouble = ((thisBatteryFullChargeCapacity / thisBatteryDesignCapacity) * 100);
                                 }
 
-                                thisBatteryCapacity = new DecimalFormat("#.#").format(batteryCapacityDouble) + "%";
+                                thisBatteryCapacity = new DecimalFormat("#.#").format(thisBatteryCapacityDouble) + "%";
 
-                                if (batteryCapacityDouble < 51) {
-                                    batteryHealthErrorArray.add("Capacity <= 50%");
-                                } else if (batteryCapacityDouble < 71) {
-                                    batteryHealthWarningArray.add("Capacity <= 70%");
-                                } else if ((batteryCapacityDouble == 100) && brand.equals("HP")) {
-                                    thisBatteryCapacity = "UNKNOWN CAPACITY (Update HP Firmware)";
+                                if (thisBatteryCapacity.startsWith("0")) {
+                                    thisBatteryCapacity = "NO POWER";
+                                    batteryHealthErrorArray.add("No Power");
+                                } else if (thisBatteryCapacityDouble < 40) {
+                                    batteryHealthErrorArray.add("Capacity < 40%");
+                                } else if (thisBatteryCapacityDouble < 60) {
+                                    batteryHealthWarningArray.add("Capacity < 60%");
+                                } else if (thisBatteryCapacity.equals("100%") && brand.equals("HP")) { // Some HP firmwares list their design capacity as whatever the full charge capacity is always resulting in exactly "100%" capacity. Sometimes updating firmware can correct this.
+                                    thisBatteryCapacity = "UNKNOWN CAPACITY";
                                     batteryHealthWarningArray.add("HP Firmware Update Required for Accurate Battery Percentage");
                                 }
                             } catch (NumberFormatException batteryCapacityException) {
@@ -3116,7 +3129,7 @@ public final class GetComputerSpecs {
                             }
 
                             String thisBatteryVoltage = "";
-                            if (windowsBatteryDesignVoltages.size() == windowsBatteryDesignCapacities.size() && windowsBatteryCurrentVoltages.size() == windowsBatteryFullChargeCapacities.size()) {
+                            if (windowsBatteryDesignVoltages.size() == windowsBatteryDesignCapacities.size()) {
                                 try {
                                     double batteryVoltageDouble = (Double.parseDouble(windowsBatteryCurrentVoltages.get(i)) / 1000);
                                     thisBatteryVoltage = new DecimalFormat("#.#").format(batteryVoltageDouble) + " V";
@@ -3153,22 +3166,29 @@ public final class GetComputerSpecs {
                                 }
                             }
 
-                            if ((batteryCapacityDouble == 100) && thisBatteryVoltage.equals("0 V")
-                                    && (windowsBatteryChargeRates.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryDischargeRates.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryRemainingCapacities.size() == windowsBatteryDesignCapacities.size())
-                                    && windowsBatteryChargeRates.get(i).equals("0") && windowsBatteryDischargeRates.get(i).equals("0") && windowsBatteryRemainingCapacities.get(i).equals("0")) {
-                                // Some systems (specifically HPs) show valid "DesignedCapacity" and "BatteryFullChargedCapacity" values which result in a capacity of "100%" even if there is NO BATTERY,
-                                // so ignore any battery values that have a voltage of "0 V" with a capacity of "100%" but a "ChargeRate" of "0", "DischargeRate" of "0", and a "RemainingCapacity" of "0".
+                            if ((windowsBatteryDischargeRates.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryChargeRates.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryChargePercentages.size() == windowsBatteryDesignCapacities.size())
+                                    && windowsBatteryDischargeRates.get(i).startsWith("0") && windowsBatteryChargeRates.get(i).startsWith("0") && windowsBatteryChargePercentages.get(i).startsWith("0")) {
+                                // Even if the capacity is not "0%", the battery may still be dead with no energy charging or discharging.
 
-                                if (!brand.equals("HP")) { // Already set note to update firmware for HPs with 100% capacity.
+                                if (thisBatteryVoltage.startsWith("0")) { // If voltage is 0, there may be NO BATTERY installed as I've seen some systems list a battery with all zero values when no battery is installed.
                                     thisBatteryCapacity = "";
+                                } else if (!thisBatteryCapacity.equals("NO POWER")) { // Otherwise, if there is no charge and no energy (charging or draining) then this is probably a DEAD BATTERY.
+                                    thisBatteryCapacity = "NO POWER";
+                                    batteryHealthErrorArray.add("No Power");
                                 }
                             }
 
                             if (!thisBatteryCapacity.isEmpty()) {
-                                if ((windowsBatteryChargingStatuses.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryDischargeRates.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryChargePercentages.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryChargeRates.size() == windowsBatteryDesignCapacities.size())
-                                        && (windowsBatteryChargingStatuses.get(i).equals("True") || windowsBatteryDischargeRates.get(i).startsWith("0")) && windowsBatteryChargePercentages.get(i).startsWith("0") && windowsBatteryChargeRates.get(i).startsWith("0")) {
+                                try {
+                                    if ((windowsBatteryChargingStatuses.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryDischargeRates.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryChargeRates.size() == windowsBatteryDesignCapacities.size()) && (windowsBatteryChargePercentages.size() == windowsBatteryDesignCapacities.size())
+                                            && (windowsBatteryChargingStatuses.get(i).equals("True") || windowsBatteryDischargeRates.get(i).startsWith("0")) && windowsBatteryChargeRates.get(i).startsWith("0") && (Integer.parseInt(windowsBatteryChargePercentages.get(i)) < 94)) { // Seen HP laptops at 94-99% that are not currently charging because the system seems to consider it fully charge.
 
-                                    batteryHealthWarningArray.add("Not Charging");
+                                        batteryHealthWarningArray.add("Not Charging");
+                                    }
+                                } catch (NumberFormatException parseChargePercentageException) {
+                                    if (isTestMode) {
+                                        System.out.println("parseChargePercentageException: " + parseChargePercentageException);
+                                    }
                                 }
 
                                 batteryHealthArray.add(thisBatteryCapacity + (thisBatteryVoltage.isEmpty() ? (thisBatteryCycleCount.isEmpty() ? "" : " (" + thisBatteryCycleCount + ")") : " (" + (thisBatteryCycleCount.isEmpty() ? "" : thisBatteryCycleCount + ", ") + thisBatteryVoltage + ")"));
@@ -3267,6 +3287,91 @@ public final class GetComputerSpecs {
                                         String[] cpuCoresParts = cpuCores.split(" \\(");
                                         cpuCores = cpuCoresParts[0];
                                         cpuPandEcoresString = cpuCoresParts[1].replace(" performance", "P").replace(" and ", " + ").replace(" efficiency", "E").replace(")", "");
+
+                                        // The following Performance and Efficiency core MHz Max speeds are from the following blog post: https://eclecticlight.co/2025/10/30/updated-cpu-core-frequencies-for-all-current-apple-silicon-macs/
+                                        // The information in this post is collected from running "sudo powermetrics -n 1 -s cpu_power" on each CPU by Howard Oakley and other contributors (https://eclecticlight.co/2025/10/28/updating-cpu-frequencies-for-apple-silicon-macs/).
+                                        // Since the "powermetrics" command requires "sudo" and takes a few seconds to run, its simpler to hard code these values since they are static for each Apple Silicon model.
+                                        // Apple Silicon Cores Max MHz Last Updated: 10/30/25
+                                        double pCoresMaxMHz = 0;
+                                        double eCoresMaxMHz = 0;
+                                        switch (cpu) {
+                                            case "Apple M1":
+                                                pCoresMaxMHz = 3204;
+                                                eCoresMaxMHz = 2064;
+                                                break;
+                                            case "Apple M1 Pro":
+                                                pCoresMaxMHz = 3228;
+                                                eCoresMaxMHz = 2064;
+                                                break;
+                                            case "Apple M1 Max":
+                                                pCoresMaxMHz = 3228;
+                                                eCoresMaxMHz = 2064;
+                                                break;
+                                            case "Apple M1 Ultra":
+                                                pCoresMaxMHz = 3228;
+                                                eCoresMaxMHz = 2064;
+                                                break;
+                                            case "Apple M2":
+                                                pCoresMaxMHz = 3504;
+                                                eCoresMaxMHz = 2424;
+                                                break;
+                                            case "Apple M2 Pro":
+                                                pCoresMaxMHz = 3504;
+                                                eCoresMaxMHz = 2424;
+                                                break;
+                                            case "Apple M2 Max":
+                                                pCoresMaxMHz = 3696;
+                                                eCoresMaxMHz = 2424;
+                                                break;
+                                            case "Apple M2 Ultra":
+                                                pCoresMaxMHz = 3696;
+                                                eCoresMaxMHz = 2424;
+                                                break;
+                                            case "Apple M3":
+                                                pCoresMaxMHz = 4056;
+                                                eCoresMaxMHz = 2748;
+                                                break;
+                                            case "Apple M3 Pro":
+                                                pCoresMaxMHz = 4056;
+                                                eCoresMaxMHz = 2748;
+                                                break;
+                                            case "Apple M3 Max":
+                                                pCoresMaxMHz = 4056;
+                                                eCoresMaxMHz = 2568;
+                                                break;
+                                            case "Apple M3 Ultra":
+                                                pCoresMaxMHz = 4056;
+                                                eCoresMaxMHz = 2568;
+                                                break;
+                                            case "Apple M4":
+                                                pCoresMaxMHz = 4464;
+                                                eCoresMaxMHz = 2892;
+                                                break;
+                                            case "Apple M4 Pro":
+                                                pCoresMaxMHz = 4512;
+                                                eCoresMaxMHz = 2592;
+                                                break;
+                                            case "Apple M4 Max":
+                                                pCoresMaxMHz = 4512;
+                                                eCoresMaxMHz = 2592;
+                                                break;
+                                            case "Apple M5":
+                                                pCoresMaxMHz = 4608;
+                                                eCoresMaxMHz = 3048;
+                                                break;
+                                            default:
+                                                break;
+                                        }
+
+                                        if (pCoresMaxMHz > 0) {
+                                            String pCoresMaxGHzString = new DecimalFormat("#.#").format(pCoresMaxMHz / 1000) + " GHz Max";
+                                            cpuPandEcoresString = cpuPandEcoresString.replace("P", ("P @ " + pCoresMaxGHzString));
+                                        }
+
+                                        if (eCoresMaxMHz > 0) {
+                                            String eCoresMaxGHzString = new DecimalFormat("#.#").format(eCoresMaxMHz / 1000) + " GHz Max";
+                                            cpuPandEcoresString = cpuPandEcoresString.replace("E", ("E @ " + eCoresMaxGHzString));
+                                        }
                                     }
                                 } else if (ram.equals("N/A") && thisMacHardwareInfoLine.startsWith("      Memory:")) {
                                     ram = thisMacHardwareInfoProperty;
@@ -3473,7 +3578,7 @@ public final class GetComputerSpecs {
                                     if (!ramSpeed.contains(" MHz")) {
                                         ramSpeed = "";
                                     }
-                                } else if (thisMacHardwareInfoLine.equals("      Upgradeable Memory: No") || cpu.startsWith("Apple")) { // Apple Silicon Macs DO NOT have this value set, but all their RAM is integrated into the Chip and not upgradable. THIS CONDITION MUST BE LAST SINCE IT WILL ALWAYS BE TRUE ON APPLE SILICON AND WOULD PREVENT OTHER CONDITIONS FROM BEING HIT.
+                                } else if (thisMacHardwareInfoLine.equals("      Upgradeable Memory: No") || cpu.startsWith("Apple")) { // Apple Silicon Macs DO NOT have this value set, but all their RAM is integrated into the Chip and not upgradeable. THIS CONDITION MUST BE LAST SINCE IT WILL ALWAYS BE TRUE ON APPLE SILICON AND WOULD PREVENT OTHER CONDITIONS FROM BEING HIT.
                                     maxRAM = " - NOT Upgradeable";
                                 }
 
@@ -3528,7 +3633,8 @@ public final class GetComputerSpecs {
                                         try {
                                             String[] thisStorageDriveInfoParts = thisStorageDriveInfo.split(" ");
                                             if ((thisStorageDriveInfoParts.length >= 2) && (thisStorageDriveInfoParts[1].length() == 2)) {
-                                                thisStorageDriveInfo = new DecimalFormat("#").format(Double.parseDouble(thisStorageDriveInfoParts[0])) + " " + thisStorageDriveInfoParts[1]; // Use the existing GB or TB value, but round it to the nearest whole number.
+                                                thisStorageDriveInfo = (thisStorageDriveInfoParts[0] + " " + thisStorageDriveInfoParts[1]); // In case "Double.parseDouble" fails for some reason, at least get rid of the "bytes" part in parenthesis.
+                                                thisStorageDriveInfo = new DecimalFormat("#").format(Double.parseDouble(thisStorageDriveInfoParts[0].replace(",", "."))) + " " + thisStorageDriveInfoParts[1]; // Use the existing GB or TB value, but round it to the nearest whole number.
                                             }
                                         } catch (NumberFormatException thisStorageDriveInfoException) {
                                             if (isTestMode) {
@@ -3620,8 +3726,8 @@ public final class GetComputerSpecs {
                         // For some strange reason, detailed Bluetooth information no longer exists in Monterey, can only detect if it is present.
                         // BUT, I wrote a script (https://github.com/freegeek-pdx/macOS-Testing-and-Deployment-Scripts/blob/main/Other%20Scripts/get_bluetooth_from_all_mac_specs_pages.sh) to extract every Bluetooth version from every specs URL to be able to know what version this model has if Bluetooth is detected.
 
-                        // Bluetooth Model IDs Last Updated: 5/15/25
-                        if (Arrays.asList("Mac14,2", "Mac14,3", "Mac14,5", "Mac14,6", "Mac14,8", "Mac14,9", "Mac14,10", "Mac14,12", "Mac14,13", "Mac14,14", "Mac14,15", "Mac15,3", "Mac15,4", "Mac15,5", "Mac15,6", "Mac15,7", "Mac15,8", "Mac15,9", "Mac15,10", "Mac15,11", "Mac15,12", "Mac15,13", "Mac15,14", "Mac16,1", "Mac16,2", "Mac16,3", "Mac16,5", "Mac16,6", "Mac16,7", "Mac16,8", "Mac16,9", "Mac16,10", "Mac16,11", "Mac16,12", "Mac16,13").contains(macModelIdentifier)) {
+                        // Bluetooth Model IDs Last Updated: 10/27/25
+                        if (Arrays.asList("Mac14,2", "Mac14,3", "Mac14,5", "Mac14,6", "Mac14,8", "Mac14,9", "Mac14,10", "Mac14,12", "Mac14,13", "Mac14,14", "Mac14,15", "Mac15,3", "Mac15,4", "Mac15,5", "Mac15,6", "Mac15,7", "Mac15,8", "Mac15,9", "Mac15,10", "Mac15,11", "Mac15,12", "Mac15,13", "Mac15,14", "Mac16,1", "Mac16,2", "Mac16,3", "Mac16,5", "Mac16,6", "Mac16,7", "Mac16,8", "Mac16,9", "Mac16,10", "Mac16,11", "Mac16,12", "Mac16,13", "Mac17,2").contains(macModelIdentifier)) {
                             thisBluetoothInfo += " 5.3";
                             bluetoothLE = true;
                             bluetoothHandoff = true;
@@ -3685,17 +3791,20 @@ public final class GetComputerSpecs {
                         }
 
                         if (maxCapacity > 0 && designCapacity > 0) {
-                            double batteryCapacityDouble = ((maxCapacity / designCapacity) * 100);
-                            thisBatterySummary = new DecimalFormat("#.#").format(batteryCapacityDouble) + "%";
+                            double thisBatteryCapacityDouble = ((maxCapacity / designCapacity) * 100);
+                            thisBatterySummary = new DecimalFormat("#.#").format(thisBatteryCapacityDouble) + "%";
 
-                            if (batteryCapacityDouble < 51) {
-                                batteryHealthErrorArray.add("Capacity <= 50%");
-                            } else if (batteryCapacityDouble < 71) {
-                                batteryHealthWarningArray.add("Capacity <= 70%");
+                            if (thisBatterySummary.startsWith("0")) {
+                                thisBatterySummary = "NO POWER";
+                                batteryHealthErrorArray.add("No Power");
+                            } else if (thisBatteryCapacityDouble < 40) {
+                                batteryHealthErrorArray.add("Capacity < 40%");
+                            } else if (thisBatteryCapacityDouble < 60) {
+                                batteryHealthWarningArray.add("Capacity < 60%");
                             }
                         } else {
-                            thisBatterySummary = "0%";
-                            batteryHealthErrorArray.add("Capacity 0%");
+                            thisBatterySummary = "NO POWER";
+                            batteryHealthErrorArray.add("No Power");
                         }
                     } catch (NumberFormatException batteryCapacityException) {
                         if (isTestMode) {
@@ -3703,6 +3812,7 @@ public final class GetComputerSpecs {
                         }
 
                         thisBatterySummary = "UNKNOWN CAPACITY";
+                        batteryHealthWarningArray.add("Unknown Capacity");
                     }
 
                     if (!thisBatteryCycleCount.equals("N/A")) {
@@ -3823,7 +3933,7 @@ public final class GetComputerSpecs {
                 // Get Marketing Model Name (and extract screen size from Mac model) for Mac's running any OS
 
                 if (isMacOS) {
-                    macHasT2chip = !new CommandReader(new String[]{"/usr/sbin/ioreg", "-rc", "AppleUSBDevice", "-n", "Apple T2 Controller", "-d", "1"}).getFirstOutputLineContaining("Apple T2 Controller").isEmpty();
+                    macHasT2chip = !new CommandReader(new String[]{"/usr/sbin/ioreg", "-rn", "Apple T2 Controller", "-d", "1"}).getFirstOutputLineContaining("Apple T2 Controller").isEmpty();
                 } else {
                     // On some Mac models, Family from dmidecode on Linux or SystemFamily from Win32_ComputerSystem on Windows is the correct shortModelName,
                     // but on other models it's also just "Mac" or "MacBook" (when it's not a MacBook) instead of the correct shortModelName of "MacBook Air" or "MacBook Pro".
@@ -3867,7 +3977,7 @@ public final class GetComputerSpecs {
 
                 // Laptop Power Adapter Info for Mac - https://support.apple.com/HT201700
                 // BUT, I wrote a script (https://github.com/freegeek-pdx/macOS-Testing-and-Deployment-Scripts/blob/main/Other%20Scripts/get_power_adapters_from_all_mac_specs_pages.sh) to extract every Power Adapter for each Model ID from every specs URL from the Model pages linked here: https://support.apple.com/HT213325
-                // Power Adapter Model IDs Last Updated: 5/15/25
+                // Power Adapter Model IDs Last Updated: 10/27/25
                 if (Arrays.asList("MacBookPro1,1", "MacBookPro1,2", "MacBookPro2,1", "MacBookPro2,2", "MacBookPro3,1", "MacBookPro4,1", "MacBookPro5,1", "MacBookPro5,2", "MacBookPro5,3", "MacBookPro6,1", "MacBookPro6,2", "MacBookPro8,2", "MacBookPro8,3", "MacBookPro9,1").contains(macModelIdentifier)) {
                     powerAdapter = "85W MagSafe 1";
                 } else if (Arrays.asList("MacBook1,1", "MacBook2,1", "MacBook3,1", "MacBook4,1", "MacBook5,1", "MacBook5,2", "MacBook6,1", "MacBook7,1", "MacBookPro5,4", "MacBookPro5,5", "MacBookPro7,1", "MacBookPro8,1", "MacBookPro9,2").contains(macModelIdentifier)) {
@@ -3900,7 +4010,7 @@ public final class GetComputerSpecs {
                     powerAdapter = "30W or 35W Dual Port or 70W USB-C/MagSafe 3";
                 } else if (Arrays.asList("Mac14,15", "Mac15,13", "Mac16,13").contains(macModelIdentifier)) {
                     powerAdapter = "35W Dual Port or 70W USB-C/MagSafe 3";
-                } else if (Arrays.asList("Mac15,3", "Mac15,6", "Mac15,8", "Mac15,10", "Mac16,1", "Mac16,6", "Mac16,8").contains(macModelIdentifier)) {
+                } else if (Arrays.asList("Mac15,3", "Mac15,6", "Mac15,8", "Mac15,10", "Mac16,1", "Mac16,6", "Mac16,8", "Mac17,2").contains(macModelIdentifier)) {
                     powerAdapter = "70W or 96W USB-C/MagSafe 3";
                 }
 
@@ -3930,6 +4040,7 @@ public final class GetComputerSpecs {
                     }
                 } else {
                     // The following list of Marketing Model Names with grouped Model IDs and Serial Config Codes is generated from: https://github.com/freegeek-pdx/macOS-Testing-and-Deployment-Scripts/blob/main/Other%20Scripts/group_every_intel_mac_marketing_model_name_with_model_ids_and_serial_config_codes.sh
+                    // And the full output from that script is here: https://github.com/freegeek-pdx/macOS-Testing-and-Deployment-Scripts/blob/main/Other%20Scripts/serial-config-codes-output/every_intel_mac_marketing_model_name_with_grouped_model_ids_and_serial_config_codes.txt
                     List<String> everyIntelMacMarketingModelNameWithGroupedModelIDsAndSerialConfigCodes = Arrays.asList(
                             "iMac (17-inch, Early 2006):iMac4,1:U2N:U2R:V4M:V4N:V4U:V66:VGB:VGZ:VH1:VHP:VV4:VV6:",
                             "iMac (17-inch, Late 2006 CD):iMac5,2:",
@@ -3993,7 +4104,6 @@ public final class GetComputerSpecs {
                             "Mac Pro Server (Mid 2010):MacPro5,1:HPV:HPW:HPY:",
                             "Mac Pro Server (Mid 2012):MacPro5,1:F4MF:F4MJ:F501:",
                             "Mac Pro:MacPro1,1:MacPro2,1:",
-                            "MacBook (13-inch):MacBook1,1:",
                             "MacBook (13-inch, Aluminum, Late 2008):MacBook5,1:",
                             "MacBook (13-inch, Early 2008):MacBook4,1:0P0:0P1:0P2:0P4:0P5:0P6:1LX:1PX:1Q2:1Q7:1QA:1QB:1QE:1ZY:27H:27J:28C:28D:28E:385:3N9:3NA:3ND:3NE:3NF:3X6:47Z:4R7:4R8:",
                             "MacBook (13-inch, Early 2009):MacBook5,2:4R1:4R2:4R3:79D:79E:79F:7A2:85D:88J:8CP:8SJ:93K:",
@@ -4004,6 +4114,7 @@ public final class GetComputerSpecs {
                             "MacBook (13-inch, Mid 2007):MacBook2,1:YA2:YA3:YA4:YA5:YA6:YA7:YA8:YA9:YJJ:YJK:YJL:YJM:YJN:YQ7:YQ8:YRG:YRH:YRJ:YRK:YSH:YSJ:YSK:YSL:YSM:YTK:YTL:YV8:YX1:YX2:YX4:YX5:YXZ:YY1:YYW:Z5V:Z5W:Z5X:Z5Y:Z5Z:Z60:Z88:ZA8:ZA9:ZAP:ZAQ:ZAS:ZAU:ZAV:ZAW:ZAX:ZAY:ZAZ:ZB0:ZB1:ZB2:ZB7:ZB8:ZB9:ZBA:ZBB:ZBE:ZBF:ZBG:ZBH:ZBJ:ZBK:ZCN:",
                             "MacBook (13-inch, Mid 2009):MacBook5,2:9GU:9GV:A1W:A1X:A1Y:A9P:A9Q:A9Y:ABW:ASC:",
                             "MacBook (13-inch, Mid 2010):MacBook7,1:",
+                            "MacBook (13-inch):MacBook1,1:",
                             "MacBook (Retina, 12-inch, 2017):MacBook10,1:",
                             "MacBook (Retina, 12-inch, Early 2015):MacBook8,1:",
                             "MacBook (Retina, 12-inch, Early 2016):MacBook9,1:",
@@ -4056,7 +4167,6 @@ public final class GetComputerSpecs {
                             "MacBook Pro (15-inch, Mid 2010):MacBookPro6,2:",
                             "MacBook Pro (15-inch, Mid 2012):MacBookPro9,1:",
                             "MacBook Pro (16-inch, 2019):MacBookPro16,1:MacBookPro16,4:",
-                            "MacBook Pro (17-inch):MacBookPro1,2:",
                             "MacBook Pro (17-inch, 2.4GHz):MacBookPro3,1:027:028:02D:09R:09S:0LR:0ND:0NM:0PD:1CW:1CX:1MF:1MG:2QW:X94:XA9:YAA:YAN:YAP:YNQ:YNS:YNW:YQ4:YQ5:YR2:YRD:YRE:YRF:YWB:YWC:YZ1:YZ2:Z5M:",
                             "MacBook Pro (17-inch, Core 2 Duo):MacBookPro2,1:",
                             "MacBook Pro (17-inch, Early 2008):MacBookPro4,1:1BY:1ED:1EN:1ER:1K2:1K8:1K9:1KA:1Q3:1SG:2CF:2DY:2DZ:2ED:3DC:3DD:3DE:3DF:3M0:3M4:3M5:YP3:YP4:ZLV:",
@@ -4066,6 +4176,7 @@ public final class GetComputerSpecs {
                             "MacBook Pro (17-inch, Late 2011):MacBookPro8,3:AY5W:DV10:DV11:DVHN:DVHV:DVHW:DW48:DY22:DY23:DY24:DY25:DY26:DY5W:DYG8:F13Y:F140:",
                             "MacBook Pro (17-inch, Mid 2009):MacBookPro5,2:8YA:8YB:91T:A3M:A3N:A5R:A5W:AF3:AKV:AKW:AMV:AMW:AN1:ANC:AND:ANE:ANF:ANJ:AUU:E6L:",
                             "MacBook Pro (17-inch, Mid 2010):MacBookPro6,1:",
+                            "MacBook Pro (17-inch):MacBookPro1,2:",
                             "MacBook Pro (Original):MacBookPro1,1:THV:VGW:VGX:VGY:VJ0:VJ1:VJ2:VJ3:VJ5:VJ6:VJ7:VJM:VMU:VSD:VTZ:VU0:VWA:VWB:VXW:VXX:W2Q:",
                             "MacBook Pro (Retina, 13-inch, Early 2013):MacBookPro10,2:FFRP:FFRR:FG1F:FG28:FGM8:FGN5:FGN6:FGPJ:FHCH:FHN0:",
                             "MacBook Pro (Retina, 13-inch, Early 2015):MacBookPro12,1:",
@@ -4358,6 +4469,10 @@ public final class GetComputerSpecs {
                 }
 
                 if (serial.equals("N/A")) {
+                    if (!possibleCustomDesktopOrBareMotherboard) {
+                        possibleCustomDesktopOrBareMotherboard = (!hasScreen && !motherboardSerial.equals("N/A"));
+                    }
+
                     serial = motherboardSerial;
 
                     if (serial.equals("N/A") && !ethernetMACarray.isEmpty()) {
@@ -4500,7 +4615,7 @@ public final class GetComputerSpecs {
                 }
             }
 
-            if (!cpuSpeedsString.isEmpty()) {
+            if (!cpuSpeedsString.isEmpty() && (!cpuPandEcoresString.contains("@") || !cpuSpeedsString.startsWith("0."))) { // On Linux, the "cpuSpeedsString" may be incorrectly something like "0.8 GHz" for modern Intel processors with P and E cores and "cpuPandEcoresString" may contain the true Max speeds. If so, don't show the incorrect base speed.
                 cpu += " @ " + cpuSpeedsString;
             }
 
@@ -4508,7 +4623,7 @@ public final class GetComputerSpecs {
                 try {
                     int cpuCountInteger = Integer.parseInt(cpuCount);
                     if (cpuCountInteger > 1) {
-                        cpu = cpuCountInteger + " x " + cpu;
+                        cpu = cpuCountInteger + "x " + cpu;
                     }
                 } catch (NumberFormatException cpuCountException) {
                     if (isTestMode) {
@@ -4561,7 +4676,35 @@ public final class GetComputerSpecs {
             }
 
             boolean ramIsLowVoltage = ((ramType.equals(" DDR3") && ramVoltage.equals("1.35 V")) || (ramType.equals(" DDR4") && ramVoltage.equals("1.05 V")));
-            ram += ramType + (ramIsLowVoltage ? "L" : "") + ramSpeed;
+            String fullRAMtype = ramType + (ramIsLowVoltage ? "L" : "") + ramSpeed;
+            ram += fullRAMtype;
+
+            String[] ramSlotsParts = ramSlots.split(" \\+ ");
+
+            if (!ramSlots.isEmpty() && ramSlots.contains("2 GB + 2 GB + 2 GB") && !ramSlots.contains("Empty")) {
+                // If a PC has 3x or more 2 GB RAM chips, and ONLY 2 GB RAM chips, with and NO empty slots
+                // it's pretty much a guarantee that the RAM is integrated (soldered on),
+                // so display soldered PC RAM in a more clear and consolidated way.
+
+                int onlyTwoGBramChipsCount = 0;
+
+                for (String thisRamSlot : ramSlotsParts) {
+                    if (thisRamSlot.equals("2 GB")) {
+                        onlyTwoGBramChipsCount++;
+                    } else {
+                        onlyTwoGBramChipsCount = 0;
+                        break;
+                    }
+                }
+
+                if (onlyTwoGBramChipsCount > 0) {
+                    ramSlots = onlyTwoGBramChipsCount + "x 2 GB Integrated";
+                    maxRAM = " - NOT Upgradeable";
+                }
+            }
+
+            int ramSlotCount = ramSlotsParts.length;
+            motherboardRAM = (ramSlots.isEmpty() ? "" : ramSlotCount + " Slot" + ((ramSlotCount == 1) ? " " : "s ")) + fullRAMtype.trim() + maxRAM;
 
             String detailedRAM = ram + (ramSlots.isEmpty() ? "" : " (" + ramSlots + ")") + maxRAM;
 
@@ -4658,6 +4801,8 @@ public final class GetComputerSpecs {
                 ram = "N/A";
                 detailedRAM = "N/A";
                 fullRAM = "N/A";
+                motherboardRAM = "N/A";
+                fullMotherboardRAM = "N/A";
                 storage = "N/A";
                 storageArray.clear();
                 storageSerial = "";
@@ -4706,6 +4851,7 @@ public final class GetComputerSpecs {
             fullMotherboardSerial = motherboardSerial;
             fullCPU = cpu;
             fullRAM = detailedRAM;
+            fullMotherboardRAM = motherboardRAM;
             storage = getFullStorage();
             storageSerial = getFullStorageSerial();
             gpu = getFullGPU();
@@ -4813,6 +4959,16 @@ public final class GetComputerSpecs {
                             ram = detailedRAM;
                         }
                     }
+                }
+            }
+
+            if (motherboardRAM.length() > maxFieldLength) {
+                if (motherboardRAM.contains(" - ")) {
+                    motherboardRAM = motherboardRAM.substring(0, motherboardRAM.lastIndexOf(" - "));
+                }
+
+                if (motherboardRAM.length() > maxFieldLength) {
+                    motherboardRAM = motherboardRAM.substring(0, (maxFieldLength - 1)) + "…";
                 }
             }
 
@@ -5387,10 +5543,11 @@ public final class GetComputerSpecs {
     }
 
     public String getEthernetMAC() {
-        return (ethernetMACarray.isEmpty() ? "N/A" : String.join(" + ", ethernetMACarray));
+        return (ethernetMACarray.isEmpty() ? "N/A" : String.join(" + ", getEthernetMACarray()));
     }
 
     public ArrayList<String> getEthernetMACarray() {
+        Collections.sort(ethernetMACarray); // Sort to make sure always returned in same order when used as serial.
         return ethernetMACarray;
     }
 
@@ -5412,6 +5569,14 @@ public final class GetComputerSpecs {
 
     public String getFullRAM() {
         return fullRAM;
+    }
+
+    public String getMotherboardRAM() {
+        return motherboardRAM;
+    }
+
+    public String getFullMotherboardRAM() {
+        return fullMotherboardRAM;
     }
 
     public String getGPU() {
@@ -5629,6 +5794,7 @@ public final class GetComputerSpecs {
         System.out.println("");
         System.out.println("CPU: " + fullCPU);
         System.out.println("RAM: " + fullRAM);
+        System.out.println("Motherboard RAM: " + fullMotherboardRAM);
         System.out.println("Wireless: " + getWireless() + (wirelessErrorArray.isEmpty() ? "" : " - " + getWirelessErrorString()));
         System.out.println("Screen: " + fullScreenSize + (screenErrorArray.isEmpty() ? "" : " - " + getScreenErrorString()));
         System.out.println("GPU: " + getFullGPU() + (gpuErrorArray.isEmpty() ? "" : " - " + getGPUerrorString()));
