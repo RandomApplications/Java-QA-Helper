@@ -27,6 +27,8 @@ declare -a jdk_build_versions=(
 	'16' # JDK 16 is the newest that still supports macOS 10.11 El Capitan.
 )
 
+newest_jdk_cacerts_path=''
+
 if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running on macOS
 	PROJECT_PATH="$(cd "${BASH_SOURCE[0]%/*}/.." &> /dev/null && pwd -P)"
 	readonly PROJECT_PATH
@@ -53,26 +55,33 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 			jdk_architecture='aarch64'
 		fi
 
-		this_jdk_full_version="$(osascript -l 'JavaScript' -e 'run = argv => JSON.parse(argv[0])[0].version_data.openjdk_version' -- "$(curl -m 5 -sf "https://api.adoptium.net/v3/assets/feature_releases/${this_jdk_major_version}/ga")" 2> /dev/null)"
-		this_jdk_full_version="${this_jdk_full_version%-LTS}"
+		adoptium_api_jdk_version_part="latest/${this_jdk_major_version}/ga"
+		if [[ "${this_jdk_major_version}" == '21' ]]; then
+			# For Java 21, never build with newer than 21.0.9+10 because version 21.0.10+7 bumps the minimum supported macOS version to macOS 11 Big Sur for Intel Macs and we want to retain support for macOS 10.15 Catalina and older on Intel Macs: https://bugs.openjdk.org/browse/JDK-8374088
+			adoptium_api_jdk_version_part="version/jdk-21.0.9%2B10"
+		fi
+		jdk_download_url="$(curl -m 5 -sfw '%{redirect_url}' "https://api.adoptium.net/v3/binary/${adoptium_api_jdk_version_part}/mac/${jdk_architecture}/jdk/hotspot/normal/eclipse")"
 
-		if [[ -z "${this_jdk_full_version}" ]]; then
-			>&2 echo -e "\n!!! FAILED TO RETRIEVE LATEST FULL VERSION FOR JDK ${this_jdk_major_version} !!!"
+		if [[ -z "${jdk_download_url}" ]]; then
+			>&2 echo -e "\n!!! FAILED TO RETRIEVE JDK ${this_jdk_full_version} DOWNLOAD URL !!!"
 			afplay '/System/Library/Sounds/Basso.aiff'
 			exit 2
+		fi
+
+		# this_jdk_full_version="$(osascript -l 'JavaScript' -e 'run = argv => JSON.parse(argv[0])[0].version_data.openjdk_version' -- "$(curl -m 5 -sf "https://api.adoptium.net/v3/assets/feature_releases/${this_jdk_major_version}/ga")" 2> /dev/null)"
+		# this_jdk_full_version="${this_jdk_full_version%-LTS}"
+		this_jdk_full_version="$(echo "${jdk_download_url}" | awk -F '_|.tar.gz' '{ print $(NF-2) "+" $(NF-1) }')" # Get latest version from download URL since there may be some delay between intial release and availablity of latest binary.
+
+		if [[ -z "${this_jdk_full_version}" ]]; then
+			>&2 echo -e "\n!!! FAILED TO RETRIEVE LATEST FULL VERSION FROM DOWNLOAD URL FOR JDK ${this_jdk_major_version} !!!"
+			afplay '/System/Library/Sounds/Basso.aiff'
+			exit 3
 		fi
 
 		this_jdk_path="${jdks_parent_path}/jdk-${this_jdk_full_version}"
 
 		if [[ ! -d "${this_jdk_path}" ]]; then
 			rm -rf "${jdks_parent_path}/jdk-${this_jdk_major_version}."*
-
-			jdk_download_url="$(curl -m 5 -sfw '%{redirect_url}' "https://api.adoptium.net/v3/binary/latest/${this_jdk_major_version}/ga/mac/${jdk_architecture}/jdk/hotspot/normal/eclipse")"
-			if [[ -z "${jdk_download_url}" ]]; then
-				>&2 echo -e "\n!!! FAILED TO RETRIEVE JDK ${this_jdk_full_version} DOWNLOAD URL !!!"
-				afplay '/System/Library/Sounds/Basso.aiff'
-				exit 3
-			fi
 
 			jdk_archive_filename="${jdk_download_url##*/}"
 
@@ -117,6 +126,16 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 		# echo "JDEPS: ${jdeps}" # Should be "java.base,java.datatransfer,java.desktop,java.logging"
 		# java.datatransfer is actually included within java.desktop (along with java.prefs and java.xml) so it doesn't actually need to be listed, but that's what jdeps returns.
 		jdeps='java.base,java.desktop,java.logging'
+		if (( this_jdk_major_version <= 21 )); then
+			# NOTE: On March 26th, 2026, something changed with "api.pcscrm.com" and using "HttpURLConnection" to connect would error with "java.net.SocketException: Connection reset" when run from within our Java 21 JLink JRE on macOS, but not error when run from a full Java 21 or 25 JDK.
+			# This issue would happen with both JLink JREs of both Java 21 and Java 16 and on multiple versions of macOS as well a Linux and Windows with older Java 21 JLink JREs where logging in used to work fine, but continued to work fine with the Java 25 JLink JRE.
+			# Therefore, this indicated that is must be be a change on the "api.pcscrm.com" server side of things, and that some Java module is the difference between it working or not.
+			# I manually tried including modules that seemed like they could get used with HTTPS connections, and eventually found that inluding "jdk.crypto.ec" solved the issue for the Java 21 JLink JRE.
+			# So, now "jdk.crypto.ec" will be included in the macOS apps built with Java 21 and Java 16 (even though it doesn't show up in the "jdeps" output).
+			# ALSO NOTE: This is important for Java 21 and older, but as of Java 22 and newer "jdk.crypto.ec" is incorporated into "java.base": https://seanjmullan.org/blog/2024/03/20/jdk22
+
+			jdeps+=',jdk.crypto.ec'
+		fi
 
 		"${this_jdk_path}/Contents/Home/bin/jlink" \
 			--add-modules "${jdeps}" \
@@ -192,6 +211,16 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 		# shellcheck disable=SC2016
 		sed -i '' 's|$APPDIR/QA_Helper.jar|$ROOTDIR/Contents/Java/QA_Helper.jar|' "${PROJECT_PATH}/dist/QA Helper.app/Contents/app/QA Helper.cfg"
 
+		# The "cacerts" file in JDK 16 does not contain the required Sectigo root certificate for https://api.pcscrm.com
+		# which would result in the error "javax.net.ssl.SSLHandshakeException: PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to requested target".
+		# So, copy the latest "cacerts" file from the newest JDK back to any apps built with older JDKs to make sure we don't have connection failures because of the missing certificate.
+		if [[ -z "${newest_jdk_cacerts_path}" ]]; then
+			newest_jdk_cacerts_path="${this_jdk_path}/Contents/Home/lib/security/cacerts"
+		elif [[ -f "${newest_jdk_cacerts_path}" ]]; then
+			echo -e "\nCopying NEWEST \"cacerts\" FROM \"${newest_jdk_cacerts_path}\" TO \"${PROJECT_PATH}/dist/QA Helper.app/Contents/Frameworks/Java.runtime/Contents/Home/lib/security/cacerts\"..."
+			cp -f "${newest_jdk_cacerts_path}" "${PROJECT_PATH}/dist/QA Helper.app/Contents/Frameworks/Java.runtime/Contents/Home/lib/security/cacerts"
+		fi
+
 		should_notarize="$([[ "${app_version}" == *'-0' ]] && echo 'false' || echo 'true')" # DO NOT offer to Notarize for testing builds (which have versions ending in "-0").
 
 		if [[ "${qa_helper_mac_zip_name}" == 'QAHelper-mac-universal.zip' ]]; then
@@ -219,7 +248,7 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 				# can be run here via Rosetta to obtain the necessary Intel files which will be created in the "Java [VERSION] Intel App Binaries" folder.
 				# This is necessary to be able to manually create a Universal app since that capability is not built-in to "jpackage".
 
-				arch -x86_64 bash "${PROJECT_PATH}/Build Scripts/Create Alternate App Binaries for Mac Univeral Binary.sh" --no-reveal
+				arch -x86_64 bash "${PROJECT_PATH}/Build Scripts/Create Alternate App Binaries for Mac Univeral Binary.sh" "${this_jdk_major_version}" --no-reveal
 			fi
 
 			if [[ -d "${alternate_app_binaries_for_universal_binary}" ]]; then
@@ -464,14 +493,14 @@ if [[ "$(uname)" == 'Darwin' ]]; then # Can only compile macOS app when running 
 
 			echo -e "\nSuccessfully Notarized QA Helper Version ${app_version_and_type_display}!"
 
-			osascript -e 'activate' -e "display dialog \"Successfully Notarized & Zipped\nQA Helper Version ${app_version_and_type_display}!\" with title \"Successfully Notarized QA Helper\" buttons {\"OK\"} default button 1 with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null
+			osascript -e 'activate' -e "display dialog \"Successfully Notarized & Zipped QA Helper\nVersion ${app_version_and_type_display}!\" with title \"Successfully Notarized QA Helper\" buttons {\"OK\"} default button 1 with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null
 		fi
 
 		open -na "${PROJECT_PATH}/dist/QA Helper.app"
 
 		if [[ "${app_version}" == *'-0' ]]; then # DO NOT offer to build for El Captian for testing builds (which have versions ending in "-0").
 			break
-		elif [[ "${qa_helper_mac_zip_name}" == 'QAHelper-mac-universal.zip' ]] && osascript -e 'activate' -e "display dialog \"Also build QA Helper version ${app_version}\nfor El Capitan?\" buttons {\"Yes\", \"No\"} cancel button 1 default button 2 with title \"Build QA Helper for El Capitan\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
+		elif [[ "${qa_helper_mac_zip_name}" == 'QAHelper-mac-universal.zip' ]] && osascript -e 'activate' -e "display dialog \"Also build QA Helper\nversion ${app_version} for El Capitan?\" buttons {\"Yes\", \"No\"} cancel button 1 default button 2 with title \"Build QA Helper for El Capitan\" with icon (\"${PROJECT_PATH}/macOS Build Resources/QA Helper.icns\" as POSIX file)" &> /dev/null; then
 			break
 		fi
 	done

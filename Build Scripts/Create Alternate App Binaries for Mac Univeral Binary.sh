@@ -43,15 +43,23 @@ if [[ ! -d "${univeral_binary_parts_base_path}" ]]; then
 	mkdir -p "${univeral_binary_parts_base_path}"
 fi
 
-jdk_major_version='21'
+jdk_major_version="${1:-21}"
 
 rm -rf "${univeral_binary_parts_base_path}/Java ${jdk_major_version}."*
 
-jdk_full_version="$(osascript -l 'JavaScript' -e 'run = argv => JSON.parse(argv[0])[0].version_data.openjdk_version' -- "$(curl -m 5 -sf "https://api.adoptium.net/v3/assets/feature_releases/${jdk_major_version}/ga")" 2> /dev/null)"
-jdk_full_version="${jdk_full_version%-LTS}"
+adoptium_api_jdk_version_part="latest/${jdk_major_version}/ga"
+if [[ "${jdk_major_version}" == '21' ]]; then
+	# For Java 21, never build with newer than 21.0.9+10 because version 21.0.10+7 bumps the minimum supported macOS version to macOS 11 Big Sur for Intel Macs and we want to retain support for macOS 10.15 Catalina and older on Intel Macs: https://bugs.openjdk.org/browse/JDK-8374088
+	adoptium_api_jdk_version_part="version/jdk-21.0.9%2B10"
+fi
+jdk_download_url="$(curl -m 5 -sfw '%{redirect_url}' "https://api.adoptium.net/v3/binary/${adoptium_api_jdk_version_part}/mac/$($is_apple_silicon && echo 'aarch64' || echo 'x64')/jdk/hotspot/normal/eclipse")"
+
+# jdk_full_version="$(osascript -l 'JavaScript' -e 'run = argv => JSON.parse(argv[0])[0].version_data.openjdk_version' -- "$(curl -m 5 -sf "https://api.adoptium.net/v3/assets/feature_releases/${jdk_major_version}/ga")" 2> /dev/null)"
+# jdk_full_version="${jdk_full_version%-LTS}"
+jdk_full_version="$(echo "${jdk_download_url}" | awk -F '_|.tar.gz' '{ print $(NF-2) "+" $(NF-1) }')" # Get latest version from download URL since there may be some delay between intial release and availablity of latest binary.
 
 if [[ -z "${jdk_full_version}" ]]; then
-	>&2 echo -e "\n!!! FAILED TO RETRIEVE LATEST FULL VERSION FOR JDK ${jdk_major_version} !!!"
+	>&2 echo -e "\n!!! FAILED TO RETRIEVE LATEST FULL VERSION FROM DOWNLOAD URL FOR JDK ${jdk_major_version} !!!"
 	afplay '/System/Library/Sounds/Basso.aiff'
 	exit 1
 fi
@@ -60,11 +68,10 @@ alternate_app_binaries_for_universal_binary_name="Java ${jdk_full_version} $($is
 alternate_app_binaries_for_universal_binary_path="${univeral_binary_parts_base_path}/${alternate_app_binaries_for_universal_binary_name}"
 mkdir -p "${alternate_app_binaries_for_universal_binary_path}"
 
-if [[ $1 != '--no-reveal' ]]; then
+if [[ $2 != '--no-reveal' ]]; then
 	open -R "${alternate_app_binaries_for_universal_binary_path}"
 fi
 
-jdk_download_url="$(curl -m 5 -sfw '%{redirect_url}' "https://api.adoptium.net/v3/binary/latest/${jdk_major_version}/ga/mac/$($is_apple_silicon && echo 'aarch64' || echo 'x64')/jdk/hotspot/normal/eclipse")"
 jdk_archive_filename="${jdk_download_url##*/}"
 echo -e "\nDOWNLOADING \"${jdk_download_url}\"..."
 rm -rf "${TMPDIR:?}/${jdk_archive_filename}"
@@ -122,7 +129,7 @@ touch "${alternate_app_binaries_for_universal_binary_path}/QA Helper.app"
 rm -rf "${alternate_app_binaries_for_universal_binary_path}/QA Helper JAR"
 rm -rf "${jdk_path}"
 
-if [[ $1 != '--no-reveal' ]]; then
+if [[ $2 != '--no-reveal' ]]; then
 	open -R "${alternate_app_binaries_for_universal_binary_path}/QA Helper.app"
 fi
 

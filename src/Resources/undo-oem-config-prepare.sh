@@ -42,6 +42,7 @@ sudo systemctl disable oem-config.service || exit 1
 sudo rm -rf '/lib/systemd/system/oem-config.target' '/lib/systemd/system/oem-config.service' || exit 1
 
 echo 'autologin-user=oem' | sudo tee -a '/etc/lightdm/lightdm.conf' > /dev/null # Re-enable auto-login.
+sudo chmod 644 '/etc/lightdm/lightdm.conf'
 
 # Add line to QA Helper log that "oem-config-prepare" was undone.
 if [[ ! -d '/usr/local/share/build-info' ]]; then

@@ -124,12 +124,12 @@ public class QAHelper extends javax.swing.JFrame {
     static boolean isTestMode = false;
     boolean gotTestModeFromLog = false;
     boolean isLoggedIn = false;
-    boolean hideLoginAndTasks = false;
+    boolean hideLoginAndVerifications = false;
     boolean forceShowAllTests = false;
     String lastStatus = "UNKNOWN STATUS";
     boolean undidOemConfigAfterLastStatus = false;
     String displayPrice = "";
-    boolean isSold = false;
+    boolean isDistributed = false;
 
     String detectedDeviceType = "UNKNOWN";
     String manualDeviceType = "";
@@ -137,6 +137,7 @@ public class QAHelper extends javax.swing.JFrame {
     boolean deviceTypeIsLaptop = false;
     boolean deviceTypeHasScreen = false;
     boolean deviceTypeIsMotherboard = false;
+    ArrayList<String> motherboardIncludedComponents = new ArrayList<>();
     ArrayList<String> validDeviceTypes = new ArrayList<>(Arrays.asList("Laptop", "Desktop", "All-in-One", "Motherboard"));
 
     boolean isCPUverified = false;
@@ -1055,10 +1056,11 @@ public class QAHelper extends javax.swing.JFrame {
             logSpecsParameters.put("brand", (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardBrand() : computerSpecs.getFullBrand()));
             logSpecsParameters.put("model", (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardModel() : computerSpecs.getFullModel()));
             logSpecsParameters.put("serial", (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardSerial() : computerSpecs.getFullSerial()));
+            logSpecsParameters.put("uuid", computerSpecs.getHardwareUUID());
             logSpecsParameters.put("os", computerSpecs.getFullOS());
             logSpecsParameters.put("chassis", computerSpecs.getChassisType() + " (" + (detectedDeviceType.equals(manualDeviceType) ? detectedDeviceType : (detectedDeviceType + " / " + manualDeviceType)) + ")");
-            logSpecsParameters.put("cpu", computerSpecs.getFullCPU());
-            logSpecsParameters.put("ram", (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()));
+            logSpecsParameters.put("cpu", ((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("CPU")) ? "N/A" : computerSpecs.getFullCPU()));
+            logSpecsParameters.put("ram", ((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("RAM")) ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()));
             logSpecsParameters.put("battery", computerSpecs.getBatteryHealthString());
             logSpecsParameters.put("power_adapter", computerSpecs.getPowerAdapter());
             logSpecsParameters.put("storage", computerSpecs.getFullStorage());
@@ -1135,7 +1137,7 @@ public class QAHelper extends javax.swing.JFrame {
                 addToProductionLogParameters.put("os", ((isLinuxLiveBoot || isWindowsPE || isMacTestBoot || deviceTypeIsMotherboard) ? "N/A" : computerSpecs.getFullOS()));
                 addToProductionLogParameters.put("windows_license", windowsLicense); // "windows_license" must always be included, but the value can be empty.
 
-                addToProductLogResult = new WebReader(privateStrings.getAddToFreeGeekProductionLogURL(isTestMode), addToProductionLogParameters, 15).getOutputLinesAsString();
+                addToProductLogResult = new WebReader(privateStrings.getAddToFreeGeekProductionLogURL(isTestMode), addToProductionLogParameters, 20).getOutputLinesAsString();
 
                 if (addToProductLogResult.equals("ADDED")) {
                     break;
@@ -1249,7 +1251,7 @@ public class QAHelper extends javax.swing.JFrame {
                         }
                     }
 
-                    String locationInfo = new WebReader(privateStrings.getFreeGeekAPIurl("location", isTestMode)).getFirstOutputLine();
+                    String locationInfo = new WebReader(privateStrings.getFreeGeekAPIurl("location?fg-referrer=qahelper", isTestMode)).getFirstOutputLine();
                     if (locationInfo.isEmpty()) {
                         locationInfo = "UNKNOWN CITY,UNKNOWN STATE";
                     }
@@ -1379,8 +1381,8 @@ public class QAHelper extends javax.swing.JFrame {
                                             try (BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(new File("/tmp/post_install_time.sh"), true))) {
                                                 bufferedWriter.write(
                                                         "--data-urlencode \"serial=" + (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardSerial() : computerSpecs.getFullSerial()) + "\" \\" + "\n"
-                                                        + "--data-urlencode \"cpu=" + computerSpecs.getFullCPU() + "\" \\" + "\n"
-                                                        + "--data-urlencode \"ram=" + (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()) + "\" \\" + "\n"
+                                                        + "--data-urlencode \"cpu=" + ((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("CPU")) ? "N/A" : computerSpecs.getFullCPU()) + "\" \\" + "\n"
+                                                        + "--data-urlencode \"ram=" + ((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("RAM")) ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()) + "\" \\" + "\n"
                                                 );
                                             } catch (IOException logSpecsForInstallTimingLogException) {
                                                 if (isTestMode) {
@@ -1543,12 +1545,44 @@ public class QAHelper extends javax.swing.JFrame {
                             @Override
                             protected void done() {
                                 if (wasFirstLoad && (isLinuxUbiquityMode || isWindowsPE)) {
-                                    List<String> allowedJavaVersions = Arrays.asList("25.0.1");
+                                    List<String> allowedJavaVersions = Arrays.asList("25.0.2");
+                                    List<String> allowedLinuxMintVersions = Arrays.asList("22.3");
+                                    List<String> allowedWinPEbuilds = Arrays.asList("26100.1");
+
+                                    String outdatedInstallerMessage = "";
+
                                     String runningJavaVersion = System.getProperty("java.version");
                                     if (!allowedJavaVersions.contains(runningJavaVersion)) {
+                                        outdatedInstallerMessage = "Java Version: " + runningJavaVersion + "<br/>Allowed Java Version(s): " + String.join(", ", allowedJavaVersions);
+                                    } else if (isLinuxUbiquityMode) {
+                                        String linuxReleaseDescription = new CommandReader(new String[]{"/usr/bin/lsb_release", "-ds"}).getFirstOutputLine().replace("Linux Mint ", "");
+                                        if (!allowedLinuxMintVersions.contains(linuxReleaseDescription)) {
+                                            outdatedInstallerMessage = "Linux Mint Version: " + linuxReleaseDescription + "<br/>Allowed Linux Mint Version(s): " + String.join(", ", allowedLinuxMintVersions);
+                                        }
+                                    } else if (isWindowsPE) {
+                                        String windowsBuildNumber = new CommandReader(new String[]{"\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "(Get-CimInstance Win32_OperatingSystem -Property BuildNumber).BuildNumber"}).getFirstOutputLine();
+
+                                        // The "ver" command seems to be the only way that I could find to get the revision of the build which is not included in osBuildNumber and indicates the latest Cumulative Update that's been installed.
+                                        String fullWindowsBuildWithRevision = new CommandReader("VER").getFirstOutputLineContaining("[Version");
+                                        if (!fullWindowsBuildWithRevision.isEmpty()) {
+                                            String[] windowsVersionParts = fullWindowsBuildWithRevision.replaceAll("[^0-9.]", "").split("\\.");
+                                            if (windowsVersionParts.length > 0) {
+                                                String osBuildRevision = windowsVersionParts[windowsVersionParts.length - 1];
+                                                if (!osBuildRevision.equals(windowsBuildNumber) && !osBuildRevision.equals("0") && !osBuildRevision.equals("10")) {
+                                                    windowsBuildNumber += "." + osBuildRevision;
+                                                }
+                                            }
+                                        }
+
+                                        if (!allowedWinPEbuilds.contains(windowsBuildNumber)) {
+                                            outdatedInstallerMessage = "Windows Build Version: " + windowsBuildNumber + "<br/>Allowed Windows Build Version(s): " + String.join(", ", allowedWinPEbuilds);
+                                        }
+                                    }
+
+                                    if (!outdatedInstallerMessage.isEmpty()) {
                                         playAlertSound("error");
-                                        sendErrorEmail("Outdated " + (isLinuxUbiquityMode ? "Linux" : "Windows") + " Installer\n\nRunning Java Version: " + runningJavaVersion + "\nAllowed Java Version(s): " + String.join(", ", allowedJavaVersions));
-                                        JOptionPane.showMessageDialog(qaHelperWindow, "<html><b>This Installer Is Outdated</b><br/><br/>Please deliver this USB installer to Free Geek I.T.</html>", "QA Helper  —  Outdated Installer", JOptionPane.ERROR_MESSAGE);
+                                        sendErrorEmail("Outdated " + (isLinuxUbiquityMode ? "Linux" : "Windows") + " Installer<br/><br/>" + outdatedInstallerMessage);
+                                        JOptionPane.showMessageDialog(qaHelperWindow, "<html><b>This Installer Is Outdated</b><br/><br/><i>" + outdatedInstallerMessage + "</i><br/><br/>Please deliver this USB installer to Free Geek I.T.</html>", "QA Helper  —  Outdated Installer", JOptionPane.ERROR_MESSAGE);
                                     }
                                 }
 
@@ -1562,36 +1596,41 @@ public class QAHelper extends javax.swing.JFrame {
                                         sendErrorEmail("Error Loading Computer Specs: " + computerSpecs.getLoadSpecsException());
                                         JOptionPane.showMessageDialog(qaHelperWindow, "<html><b>Error Loading Computer Specs</b><br/><br/><pre>" + computerSpecs.getLoadSpecsException() + "</pre><br/>This should not have happened, please inform Free Geek I.T.</html>", "QA Helper  —  Load Specs Error", JOptionPane.ERROR_MESSAGE);
                                     } else if (wasFirstLoad) {
-                                        if ((isLinuxUbiquityMode || isWindowsPE) && computerSpecs.getFullStorage().contains(" eMMC")) {
-                                            playAlertSound("error");
-                                            int eMMCDetectedResponse = JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>eMMC Storage Detected:</b><br/>" + computerSpecs.getFullStorage() + "<br/><br/><i>All computers with eMMC storage are below build specifications.</i><br/><br/><b>This computer left SDA by accident and the eMMC drive WAS NOT SECURELY ERASED.</b><br/><br/><u>This computer with un-erased eMMC storage must be reported and sent back to SDA.</u></html>", "QA Helper  —  eMMC Detected", JOptionPane.YES_NO_OPTION, JOptionPane.ERROR_MESSAGE, null, new String[]{"Shut Down", "Certify This eMMC Has Been Securely Erased"}, "Shut Down");
+                                        if (isLinuxUbiquityMode || isWindowsPE) {
+                                            String fullStorage = computerSpecs.getFullStorage();
+                                            if (fullStorage.equals("N/A") || fullStorage.contains(" eMMC")) {
+                                                playAlertSound("error");
+                                                int continueAnywayResponse = (fullStorage.equals("N/A")
+                                                        ? JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>No internal drives were detected for installation.</b><br/><br/><i>Make sure <u>SATA Operation</u> is set to <u>AHCI</u> (and not RAID) in <u>UEFI/BIOS Setup</u>.</i><br/><br/>If you do not see a <u>SATA Operation</u> section, make sure any kind of <u>Advanced Setup</u> toggle is enabled.</html>", "QA Helper  —  No Internal Drives Detected", JOptionPane.YES_NO_OPTION, JOptionPane.ERROR_MESSAGE, null, new String[]{"Shut Down", "Continue Anyway"}, "Shut Down")
+                                                        : JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>eMMC Storage Detected:</b><br/>" + computerSpecs.getFullStorage() + "<br/><br/><i>All computers with eMMC storage are below build specifications.</i><br/><br/><b>This computer left SDA by accident and the eMMC drive WAS NOT SECURELY ERASED.</b><br/><br/><u>This computer with un-erased eMMC storage must be reported and sent back to SDA.</u></html>", "QA Helper  —  eMMC Detected", JOptionPane.YES_NO_OPTION, JOptionPane.ERROR_MESSAGE, null, new String[]{"Shut Down", "Certify This eMMC Has Been Securely Erased"}, "Shut Down"));
 
-                                            if (eMMCDetectedResponse != JOptionPane.NO_OPTION) { // Check for "JOptionPane.NO_OPTION" specifically because still want pressing Escape key to Shut Down. Certifying must be manually clicked.
-                                                if (isLinux) {
-                                                    try {
-                                                        while (!new CommandReader(new String[]{"/usr/bin/pgrep", "-fn", "/auto-scripts/.*\\+(user|root)\\.sh$"}).getFirstOutputLine().isEmpty()) {
+                                                if (continueAnywayResponse != JOptionPane.NO_OPTION) { // Check for "JOptionPane.NO_OPTION" specifically because still want pressing Escape key to Shut Down. Continuing must be manually clicked.
+                                                    if (isLinux) {
+                                                        try {
+                                                            while (!new CommandReader(new String[]{"/usr/bin/pgrep", "-fn", "/auto-scripts/.*\\+(user|root)\\.sh$"}).getFirstOutputLine().isEmpty()) {
+                                                                TimeUnit.SECONDS.sleep(2);
+                                                            }
+
+                                                            Runtime.getRuntime().exec(new String[]{"/bin/systemctl", "poweroff"}).waitFor();
                                                             TimeUnit.SECONDS.sleep(2);
+                                                        } catch (IOException | InterruptedException systemctlPowerOffException) {
+                                                            if (isTestMode) {
+                                                                System.out.println("systemctlPowerOffException: " + systemctlPowerOffException);
+                                                            }
                                                         }
+                                                    } else if (isWindows) {
+                                                        try {
+                                                            Runtime.getRuntime().exec(new String[]{"\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Stop-Computer"}).waitFor();
+                                                            TimeUnit.SECONDS.sleep(2);
+                                                        } catch (IOException | InterruptedException stopComputerException) {
+                                                            if (isTestMode) {
+                                                                System.out.println("stopComputerException: " + stopComputerException);
+                                                            }
+                                                        }
+                                                    }
 
-                                                        Runtime.getRuntime().exec(new String[]{"/bin/systemctl", "poweroff"}).waitFor();
-                                                        TimeUnit.SECONDS.sleep(2);
-                                                    } catch (IOException | InterruptedException systemctlPowerOffException) {
-                                                        if (isTestMode) {
-                                                            System.out.println("systemctlPowerOffException: " + systemctlPowerOffException);
-                                                        }
-                                                    }
-                                                } else if (isWindows) {
-                                                    try {
-                                                        Runtime.getRuntime().exec(new String[]{"\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "Stop-Computer"}).waitFor();
-                                                        TimeUnit.SECONDS.sleep(2);
-                                                    } catch (IOException | InterruptedException stopComputerException) {
-                                                        if (isTestMode) {
-                                                            System.out.println("stopComputerException: " + stopComputerException);
-                                                        }
-                                                    }
+                                                    System.exit(0);
                                                 }
-
-                                                System.exit(0);
                                             }
                                         }
 
@@ -1637,19 +1676,23 @@ public class QAHelper extends javax.swing.JFrame {
                                         }
 
                                         if (!manuallySetDeviceType && computerSpecs.getPossibleCustomDesktopOrBareMotherboard()) {
-                                            String[] customDesktopOrBareMotherboardDialogButtons = new String[]{"Custom Desktop", "Bare Motherboard"};
+                                            String[] customDesktopOrBareMotherboardDialogButtons = new String[]{"Custom Desktop", "Only Motherboard"};
 
                                             playAlertSound("beep");
-                                            int customDesktopOrBareMotherboardDialogResponse = JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>Are you testing a fully built <u>custom desktop</u> or just a <u>bare motherboard</u>?</b></html>", "QA Helper  —  Specify Device Type", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, customDesktopOrBareMotherboardDialogButtons, customDesktopOrBareMotherboardDialogButtons[0]);
+                                            int customDesktopOrBareMotherboardDialogResponse = JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>Are you testing a fully built <u>custom desktop</u> or only a <u>motherboard</u>?</b></html>", "QA Helper  —  Specify Device Type", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, customDesktopOrBareMotherboardDialogButtons, customDesktopOrBareMotherboardDialogButtons[0]);
 
                                             String customDesktopOrBareMotherboardDialogResponseString = "Custom Desktop";
                                             if (customDesktopOrBareMotherboardDialogResponse > -1) {
                                                 customDesktopOrBareMotherboardDialogResponseString = customDesktopOrBareMotherboardDialogButtons[customDesktopOrBareMotherboardDialogResponse];
                                             }
 
-                                            if (customDesktopOrBareMotherboardDialogResponseString.equals("Bare Motherboard")) {
+                                            if (customDesktopOrBareMotherboardDialogResponseString.equals("Only Motherboard")) {
                                                 menDeviceTypeMotherboardActionPerformed(null);
                                             }
+                                        }
+
+                                        if (!isInternetVerified) {
+                                            btnTestInternetActionPerformed(null);
                                         }
                                     }
                                 }
@@ -2427,6 +2470,24 @@ public class QAHelper extends javax.swing.JFrame {
                                 lastPIDscannedOrConfirmed = pid;
                                 isTestMode = (thisHelperLogLine.contains("Test Mode"));
                                 gotTestModeFromLog = isTestMode;
+                            } else if (thisHelperLogLine.startsWith("Reset All Tests to UNVERIFIED")) {
+                                isCPUverified = false;
+                                isDriveHealthVerified = false;
+                                isDiscDriveVerified = false;
+                                isInternetVerified = false;
+                                isScreenVerified = false;
+                                isAudioVerified = false;
+                                isMicrophoneVerified = false;
+                                isCameraVerified = false;
+                                isKeyboardVerified = false;
+                                isMouseVerified = false;
+
+                                isBIOSverified = false;
+                                isPortsVerified = false;
+                                isDriversVerified = false;
+                                isUpdatesVerified = false;
+                                isWindowsLicenseVerified = false;
+                                isRemoteManagementVerified = false;
                             } else if (thisHelperLogLine.contains("Verified") || thisHelperLogLine.contains("UNVERIFIED")) {
                                 boolean isVerified = (thisHelperLogLine.contains("Verified") && !thisHelperLogLine.contains("UNVERIFIED"));
                                 if (thisHelperLogLine.contains("CPU")) {
@@ -2467,6 +2528,25 @@ public class QAHelper extends javax.swing.JFrame {
                                 undidOemConfigAfterLastStatus = false;
                             } else if (thisHelperLogLine.startsWith("Manual Device Type:")) {
                                 manualDeviceType = thisHelperLogLine.substring(thisHelperLogLine.indexOf(": ") + 2).split(" - ")[0];
+
+                                motherboardIncludedComponents.clear();
+
+                                if (manualDeviceType.startsWith("Motherboard (Including ")) {
+                                    if (manualDeviceType.contains("CPU")) {
+                                        motherboardIncludedComponents.add("CPU");
+                                    }
+
+                                    if (manualDeviceType.contains("RAM")) {
+                                        motherboardIncludedComponents.add("RAM");
+                                    }
+
+                                    if (manualDeviceType.contains("GPU")) {
+                                        motherboardIncludedComponents.add("GPU");
+                                    }
+
+                                    manualDeviceType = manualDeviceType.split(" \\(")[0];
+                                }
+
                                 if (validDeviceTypes.contains(manualDeviceType)) {
                                     manuallySetDeviceType = true;
                                 } else {
@@ -2479,10 +2559,10 @@ public class QAHelper extends javax.swing.JFrame {
 
                                 if (possibleDisplayPrice.startsWith("$")) {
                                     displayPrice = "$" + possibleDisplayPrice.replaceAll("[^0-9,]", "");
-                                    isSold = false;
+                                    isDistributed = false;
                                 }
-                            } else if (thisHelperLogLine.startsWith("Sold")) {
-                                isSold = true;
+                            } else if (thisHelperLogLine.startsWith("Sold") || thisHelperLogLine.startsWith("Distributed")) {
+                                isDistributed = true;
                             }
                         });
                     } catch (IOException readLogException) {
@@ -2491,8 +2571,8 @@ public class QAHelper extends javax.swing.JFrame {
                         }
                     }
 
-                    // Never hide login and tasks in Windows since QA Helper will never be shown in demo mode.
-                    hideLoginAndTasks = (!isLinuxUbiquityMode && !isWindows && !undidOemConfigAfterLastStatus && lastStatus.equals(statusNames[12]));
+                    // Never hide login in Windows since QA Helper will never be shown in demo mode.
+                    hideLoginAndVerifications = (!isLinuxUbiquityMode && !isWindows && !undidOemConfigAfterLastStatus && lastStatus.equals(statusNames[12]));
 
                     if (!pid.equals("N/A")) {
                         txtPID.setText(pid);
@@ -2664,13 +2744,19 @@ public class QAHelper extends javax.swing.JFrame {
             menDeviceTypeAllInOne.setText(menDeviceTypeAllInOneText);
         }
 
-        menDeviceTypeMotherboard.setSelected(manualDeviceType.equals("Motherboard"));
         String menDeviceTypeMotherboardText = "Motherboard" + (possibleCustomDesktopOrBareMotherboard ? " (Possible)" : "");
+        if (manualDeviceType.equals("Motherboard")) {
+            menDeviceTypeMotherboard.setSelected(true);
+            menDeviceTypeMotherboardText = "Motherboard (" + (motherboardIncludedComponents.isEmpty() ? "Bare" : "Including " + String.join(", ", motherboardIncludedComponents)) + ")";
+        } else {
+            menDeviceTypeMotherboard.setSelected(false);
+        }
+
         if (!menDeviceTypeMotherboard.getText().equals(menDeviceTypeMotherboardText)) {
             menDeviceTypeMotherboard.setText(menDeviceTypeMotherboardText);
         }
 
-        boolean shouldShowDeviceTypeMenu = (!hideLoginAndTasks && !isPeripheralTestMode && (manuallySetDeviceType || isTestMode || !brandIsApple));
+        boolean shouldShowDeviceTypeMenu = (!hideLoginAndVerifications && !isPeripheralTestMode && (manuallySetDeviceType || isTestMode || !brandIsApple));
         if (shouldShowDeviceTypeMenu != deviceTypeMenu.isVisible()) {
             deviceTypeMenu.setEnabled(shouldShowDeviceTypeMenu);
             deviceTypeMenu.setVisible(shouldShowDeviceTypeMenu);
@@ -2806,7 +2892,7 @@ public class QAHelper extends javax.swing.JFrame {
             }
 
             // Never hide login and tasks in Windows since QA Helper will never be shown in demo mode.
-            hideLoginAndTasks = (!isLinuxUbiquityMode && !isWindows && !undidOemConfigAfterLastStatus && currentStatusAndTech[0].equals(statusNames[12]));
+            hideLoginAndVerifications = (!isLinuxUbiquityMode && !isWindows && !undidOemConfigAfterLastStatus && currentStatusAndTech[0].equals(statusNames[12]));
 
             boolean shouldShowReopenRepairMenuItem = (!currentStatusAndTech[0].equals(statusNames[3]) && !currentStatusAndTech[0].equals("UNKNOWN STATUS"));
             if (shouldShowReopenRepairMenuItem != menReopenRepair.isEnabled()) {
@@ -2843,9 +2929,9 @@ public class QAHelper extends javax.swing.JFrame {
             lblStatusText = "<html><span style='font-size: larger'>"
                     + (isPeripheralTestMode
                             ? "<b><i>Peripheral Test Mode</i></b>"
-                            : (hideLoginAndTasks
-                                    ? (isSold
-                                            ? "<b><u>SOLD</u></b> &nbsp;&mdash;&nbsp; "
+                            : (hideLoginAndVerifications
+                                    ? (isDistributed
+                                            ? "<b><u>Distributed</u></b> &nbsp;&mdash;&nbsp; "
                                             : "")
                                     + (!displayPrice.isEmpty()
                                     ? "<b>Price:</b> " + escapeSingleLineSpecStringForHTML(displayPrice) + " &nbsp;&mdash;&nbsp; <b>ID:</b> "
@@ -2859,8 +2945,8 @@ public class QAHelper extends javax.swing.JFrame {
                                     : ""))
                     + "</span></html>";
 
-            btnDoneTestingText = (hideLoginAndTasks
-                    ? "Options"
+            btnDoneTestingText = (hideLoginAndVerifications
+                    ? "Done"
                     : ((!isPeripheralTestMode && (isLinuxUbiquityMode || isWindowsPE))
                             ? "Install OS"
                             : "Quit"));
@@ -2882,7 +2968,7 @@ public class QAHelper extends javax.swing.JFrame {
             lblStatus.setText(lblStatusText);
         }
 
-        boolean shouldShowStatus = (isPeripheralTestMode || isLoggedIn || hideLoginAndTasks);
+        boolean shouldShowStatus = (isPeripheralTestMode || isLoggedIn || hideLoginAndVerifications);
         if (shouldShowStatus != lblStatus.isVisible()) {
             lblStatus.setVisible(shouldShowStatus);
         }
@@ -2951,28 +3037,10 @@ public class QAHelper extends javax.swing.JFrame {
             btnReloadSpecs.setVisible(false);
         }
 
-        boolean shouldShowStressCPUandTasks = (!isPeripheralTestMode & (isLoggedIn || !hideLoginAndTasks));
-        if (shouldShowStressCPUandTasks != lblTasks.isVisible()) {
-            btnStressCPU.setEnabled(shouldShowStressCPUandTasks);
-            btnStressCPU.setVisible(shouldShowStressCPUandTasks);
-
-            btnVerifyCPU.setEnabled(shouldShowStressCPUandTasks);
-            btnVerifyCPU.setVisible(shouldShowStressCPUandTasks);
-
-            middleSeparator2.setVisible(shouldShowStressCPUandTasks);
-
-            lblTasks.setVisible(shouldShowStressCPUandTasks);
-
-            btnCheckPorts.setEnabled(shouldShowStressCPUandTasks);
-            btnCheckPorts.setVisible(shouldShowStressCPUandTasks);
-
-            btnVerifyPorts.setVisible(shouldShowStressCPUandTasks);
-        }
-
-        // Do not allow Ports Verification in Preinstallation Environment because plugging in an external monitor in Ubiquity on Linux Mint 22.2 may freeze the system or make the mouse not work, so just always suggest doing the test in the full OS.
-        boolean shouldEnableVerifyPorts = (shouldShowStressCPUandTasks && !isLinuxUbiquityMode && !isWindowsPE);
-        if (shouldEnableVerifyPorts != btnVerifyPorts.isEnabled()) {
-            btnVerifyPorts.setEnabled(shouldEnableVerifyPorts);
+        boolean shouldShowVerifications = (!isPeripheralTestMode & (isLoggedIn || !hideLoginAndVerifications));
+        if (shouldShowVerifications != btnVerifyCPU.isVisible()) {
+            btnVerifyCPU.setEnabled(shouldShowVerifications);
+            btnVerifyCPU.setVisible(shouldShowVerifications);
         }
 
         if (!isLinux) {
@@ -2988,7 +3056,7 @@ public class QAHelper extends javax.swing.JFrame {
             btnDriveHealth.setVisible(shouldShowDriveHealth);
         }
 
-        boolean shouldShowVerifyDriveHealth = (shouldShowDriveHealth && shouldShowStressCPUandTasks);
+        boolean shouldShowVerifyDriveHealth = (shouldShowDriveHealth && shouldShowVerifications);
         if (shouldShowVerifyDriveHealth != btnVerifyDriveHealth.isVisible()) {
             btnVerifyDriveHealth.setEnabled(shouldShowVerifyDriveHealth);
             btnVerifyDriveHealth.setVisible(shouldShowVerifyDriveHealth);
@@ -3000,7 +3068,7 @@ public class QAHelper extends javax.swing.JFrame {
             btnEjectDiscDrive.setVisible(shouldShowDiscDrive);
         }
 
-        boolean shouldShowVerifyDiscDrive = (shouldShowStressCPUandTasks && (hasDiscDrive || (!deviceTypeIsLaptop && !deviceTypeIsMotherboard)));
+        boolean shouldShowVerifyDiscDrive = (shouldShowVerifications && (hasDiscDrive || (!deviceTypeIsLaptop && !deviceTypeIsMotherboard)));
         if (shouldShowVerifyDiscDrive != btnVerifyDiscDrive.isVisible()) { // Intentionally allowing the lack of a disc drive to be verified on Desktops to confirm the computer was manufactured without a disc drive.
             btnVerifyDiscDrive.setEnabled(shouldShowVerifyDiscDrive);
             btnVerifyDiscDrive.setVisible(shouldShowVerifyDiscDrive);
@@ -3012,7 +3080,7 @@ public class QAHelper extends javax.swing.JFrame {
             btnTestAudio.setVisible(shouldShowAudioTest);
         }
 
-        boolean shouldShowVerifyAudioTest = (shouldShowAudioTest && shouldShowStressCPUandTasks);
+        boolean shouldShowVerifyAudioTest = (shouldShowAudioTest && shouldShowVerifications);
         if (shouldShowVerifyAudioTest != btnVerifyAudio.isVisible()) {
             btnVerifyAudio.setVisible(shouldShowVerifyAudioTest);
         }
@@ -3029,7 +3097,7 @@ public class QAHelper extends javax.swing.JFrame {
             btnTestInternet.setVisible(shouldShowInternetTest);
         }
 
-        boolean shouldShowVerifyInternetTest = (shouldShowInternetTest && shouldShowStressCPUandTasks);
+        boolean shouldShowVerifyInternetTest = (shouldShowInternetTest && shouldShowVerifications);
         if (shouldShowVerifyInternetTest != btnVerifyInternet.isVisible()) {
             btnVerifyInternet.setEnabled(shouldShowVerifyInternetTest);
             btnVerifyInternet.setVisible(shouldShowVerifyInternetTest);
@@ -3041,7 +3109,7 @@ public class QAHelper extends javax.swing.JFrame {
             btnTestMicrophone.setVisible(shouldShowMicrophoneTest);
         }
 
-        boolean shouldShowVerifyMicrophoneTest = (shouldShowMicrophoneTest && shouldShowStressCPUandTasks);
+        boolean shouldShowVerifyMicrophoneTest = (shouldShowMicrophoneTest && shouldShowVerifications);
         if (shouldShowVerifyMicrophoneTest != btnVerifyMicrophone.isVisible()) {
             btnVerifyMicrophone.setVisible(shouldShowVerifyMicrophoneTest);
         }
@@ -3059,7 +3127,7 @@ public class QAHelper extends javax.swing.JFrame {
             btnTestCamera.setVisible(shouldShowCameraTest);
         }
 
-        boolean shouldShowVerifyCameraTest = (shouldShowCameraTest && shouldShowStressCPUandTasks);
+        boolean shouldShowVerifyCameraTest = (shouldShowCameraTest && shouldShowVerifications);
         if (shouldShowVerifyCameraTest != btnVerifyCamera.isVisible()) {
             btnVerifyCamera.setVisible(shouldShowVerifyCameraTest);
         }
@@ -3076,7 +3144,7 @@ public class QAHelper extends javax.swing.JFrame {
             btnTestScreen.setVisible(shouldShowScreenTest);
         }
 
-        boolean shouldShowVerifyScreenTest = (shouldShowScreenTest && shouldShowStressCPUandTasks);
+        boolean shouldShowVerifyScreenTest = (shouldShowScreenTest && shouldShowVerifications);
         if (shouldShowVerifyScreenTest != btnVerifyScreen.isVisible()) {
             btnVerifyScreen.setEnabled(shouldShowVerifyScreenTest);
             btnVerifyScreen.setVisible(shouldShowVerifyScreenTest);
@@ -3088,7 +3156,7 @@ public class QAHelper extends javax.swing.JFrame {
             btnTestKeyboard.setVisible(shouldShowKeyboardTest);
         }
 
-        boolean shouldShowVerifyKeyboardTest = (shouldShowKeyboardTest && shouldShowStressCPUandTasks);
+        boolean shouldShowVerifyKeyboardTest = (shouldShowKeyboardTest && shouldShowVerifications);
         if (shouldShowVerifyKeyboardTest != btnVerifyKeyboard.isVisible()) {
             btnVerifyKeyboard.setEnabled(shouldShowVerifyKeyboardTest);
             btnVerifyKeyboard.setVisible(shouldShowVerifyKeyboardTest);
@@ -3100,7 +3168,7 @@ public class QAHelper extends javax.swing.JFrame {
             btnTestMouse.setVisible(shouldShowMouseTest);
         }
 
-        boolean shouldShowVerifyMouseTest = (shouldShowMouseTest && shouldShowStressCPUandTasks);
+        boolean shouldShowVerifyMouseTest = (shouldShowMouseTest && shouldShowVerifications);
         if (shouldShowVerifyMouseTest != btnVerifyMouse.isVisible()) {
             btnVerifyMouse.setEnabled(shouldShowVerifyMouseTest);
             btnVerifyMouse.setVisible(shouldShowVerifyMouseTest);
@@ -3112,7 +3180,7 @@ public class QAHelper extends javax.swing.JFrame {
             lblMoreTests.setVisible(shouldShowMoreTestsLabel);
         }
 
-        boolean shouldShowSetupBIOS = (!isMacOS && shouldShowStressCPUandTasks);
+        boolean shouldShowSetupBIOS = (!isMacOS && shouldShowVerifications);
         if (shouldShowSetupBIOS != btnSetupBIOS.isVisible()) {
             btnSetupBIOS.setEnabled(shouldShowSetupBIOS);
             btnSetupBIOS.setVisible(shouldShowSetupBIOS);
@@ -3121,12 +3189,22 @@ public class QAHelper extends javax.swing.JFrame {
             btnVerifyBIOS.setVisible(shouldShowSetupBIOS);
         }
 
+        if (shouldShowVerifications != btnVerifyPorts.isVisible()) {
+            btnVerifyPorts.setVisible(shouldShowVerifications);
+        }
+
+        // Do not allow Ports Verification in Preinstallation Environment because plugging in an external monitor in Ubiquity on Linux Mint 22.2 may freeze the system or make the mouse not work, so just always suggest doing the test in the full OS.
+        boolean shouldEnableVerifyPorts = (shouldShowVerifications && !isLinuxUbiquityMode && !isWindowsPE);
+        if (shouldEnableVerifyPorts != btnVerifyPorts.isEnabled()) {
+            btnVerifyPorts.setEnabled(shouldEnableVerifyPorts);
+        }
+
         String btnSystemUpdatesText = (isWindows ? "Windows Update" : ((isLinux ? "Firmware" : "System") + " Updates"));
         if (!btnSystemUpdatesText.equals(btnSystemUpdates.getText())) {
             btnSystemUpdates.setText(btnSystemUpdatesText);
         }
 
-        boolean shouldShowSystemUpdates = (!isLinuxLiveBoot && !isWindowsPE && shouldShowStressCPUandTasks);
+        boolean shouldShowSystemUpdates = (!isLinuxLiveBoot && !isWindowsPE && shouldShowVerifications);
         if (shouldShowSystemUpdates != btnSystemUpdates.isVisible()) {
             btnSystemUpdates.setEnabled(shouldShowSystemUpdates);
             btnSystemUpdates.setVisible(shouldShowSystemUpdates);
@@ -3155,7 +3233,7 @@ public class QAHelper extends javax.swing.JFrame {
             }
         }
 
-        boolean shouldShowWindowsLicense = (isWindows && !isWindowsPE && !deviceTypeIsMotherboard && shouldShowStressCPUandTasks);
+        boolean shouldShowWindowsLicense = (isWindows && !isWindowsPE && !deviceTypeIsMotherboard && shouldShowVerifications);
         if (shouldShowWindowsLicense != btnCheckWindowsLicense.isVisible()) {
             btnCheckWindowsLicense.setEnabled(shouldShowWindowsLicense);
             btnCheckWindowsLicense.setVisible(shouldShowWindowsLicense);
@@ -3164,7 +3242,7 @@ public class QAHelper extends javax.swing.JFrame {
             btnVerifyWindowsLicense.setVisible(shouldShowWindowsLicense);
         }
 
-        boolean shouldShowCheckRemoteManagement = (isMacOS && shouldShowStressCPUandTasks);
+        boolean shouldShowCheckRemoteManagement = (isMacOS && shouldShowVerifications);
         if (shouldShowCheckRemoteManagement != btnCheckRemoteManagement.isVisible()) {
             btnCheckRemoteManagement.setEnabled(shouldShowCheckRemoteManagement);
             btnCheckRemoteManagement.setVisible(shouldShowCheckRemoteManagement);
@@ -3195,7 +3273,7 @@ public class QAHelper extends javax.swing.JFrame {
             btnSaveOrPrintSpecs.setText(btnSaveOrPrintSpecsText);
         }
 
-        boolean shouldShowSaveSpecs = ((!isLinuxUbiquityMode || btnSaveOrPrintSpecsText.equals("Print Specs")) && !isWindowsPE && shouldShowStressCPUandTasks);
+        boolean shouldShowSaveSpecs = ((!isLinuxUbiquityMode || btnSaveOrPrintSpecsText.equals("Print Specs")) && !isWindowsPE && shouldShowVerifications);
         if (shouldShowSaveSpecs != btnSaveOrPrintSpecs.isVisible()) {
             btnSaveOrPrintSpecs.setEnabled(shouldShowSaveSpecs);
             btnSaveOrPrintSpecs.setVisible(shouldShowSaveSpecs);
@@ -3443,24 +3521,24 @@ public class QAHelper extends javax.swing.JFrame {
             }
 
             // CPU
-            String lblCPUtext = computerSpecs.getCPU();
-            String lblCPUtoolTipText = lblCPULabel.getText().replace("</html>", "<br/>") + escapeSingleLineSpecStringForHTML(computerSpecs.getFullCPU()) + toolTipFooter;
-            Color lblCPUcolor = (lblCPUtext.equals("N/A") ? errorColor : defaultColor);
+            String lblCPUtext = ((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("CPU")) ? "<html>N/A  - <i>Will Fill Chipset &amp; Socket on FG Specs </i></html>" : computerSpecs.getCPU());
+            String lblCPUtoolTipText = lblCPULabel.getText().replace("</html>", "<br/>") + escapeSingleLineSpecStringForHTML(computerSpecs.getFullCPU()) + toolTipFooter; // Intentionally show full CPU in tooltip even if Motherboard mode not including CPU.
+            Color lblCPUcolor = (lblCPUtext.equals("N/A") ? errorColor : (lblCPUtext.startsWith("<html>N/A  - ") ? attentionColor : defaultColor));
 
             if (!lblCPULabel.getForeground().equals(lblCPUcolor)) {
                 lblCPULabel.setForeground(lblCPUcolor);
                 lblCPU.setForeground(lblCPUcolor);
             }
 
-            if ((lblCPU.getToolTipText() == null) || !lblCPU.getToolTipText().equals(lblCPUtoolTipText)) {
+            if ((lblCPU.getText() == null) || (lblCPU.getToolTipText() == null) || !lblCPU.getText().equals(lblCPUtext) || !lblCPU.getToolTipText().equals(lblCPUtoolTipText)) {
                 lblCPU.setText(lblCPUtext);
                 lblCPU.setToolTipText(lblCPUtoolTipText);
                 lblCPULabel.setToolTipText(lblCPUtoolTipText);
             }
 
             // RAM
-            String lblRAMtext = (deviceTypeIsMotherboard ? computerSpecs.getMotherboardRAM() : computerSpecs.getRAM());
-            String lblRAMtoolTipText = escapeSingleLineSpecStringForHTML(deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()).replace(" - ", "<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Note:</b> ");
+            String lblRAMtext = ((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("RAM")) ? computerSpecs.getMotherboardRAM() : computerSpecs.getRAM());
+            String lblRAMtoolTipText = escapeSingleLineSpecStringForHTML((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("RAM")) ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()).replace(" - ", "<br/>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<b>Note:</b> ");
             Color lblRAMcolor = defaultColor;
 
             if (lblRAMtext.equals("N/A")) {
@@ -3811,7 +3889,7 @@ public class QAHelper extends javax.swing.JFrame {
             }
 
             // GPU
-            boolean shouldShowGPULabel = (!deviceTypeIsMotherboard);
+            boolean shouldShowGPULabel = (!deviceTypeIsMotherboard || motherboardIncludedComponents.contains("GPU"));
             if (shouldShowGPULabel) {
                 String lblGPUtext = computerSpecs.getGPU();
 
@@ -4164,10 +4242,6 @@ public class QAHelper extends javax.swing.JFrame {
     }
 
     private void focusNextTestTaskVerifyButton(Component currentButton) {
-        if (btnDoneTesting.getText().equals("Options")) {
-            return;
-        }
-
         Object[][] allTestButtonsAndVerifications = new Object[][]{
             {btnStressCPU, btnVerifyCPU, isCPUverified},
             {btnDriveHealth, btnVerifyDriveHealth, isDriveHealthVerified},
@@ -4190,15 +4264,20 @@ public class QAHelper extends javax.swing.JFrame {
 
         boolean foundCurrentButton = (currentButton == null);
 
+        boolean loginAndVerificationsCurrentlyHidden = (hideLoginAndVerifications && btnDoneTesting.getText().equals("Done"));
+
         for (Object[] thisTestButtonSet : allTestButtonsAndVerifications) {
             Component thisTestButton = (Component) thisTestButtonSet[0];
             Component thisVerifyButton = (Component) thisTestButtonSet[1];
             boolean thisTestIsVerified = (boolean) thisTestButtonSet[2];
+            if (loginAndVerificationsCurrentlyHidden) {
+                thisTestIsVerified = false;
+            }
 
             if (foundCurrentButton || (currentButton == thisTestButton) || (currentButton == thisVerifyButton)) {
                 if (!thisTestIsVerified) {
                     if (foundCurrentButton || (currentButton == thisVerifyButton)) {
-                        if (thisTestButton.isVisible() && thisTestButton.isEnabled() && (thisVerifyButton.isEnabled() || (currentButton != null))) {
+                        if (thisTestButton.isVisible() && thisTestButton.isEnabled() && (loginAndVerificationsCurrentlyHidden || thisVerifyButton.isEnabled() || (currentButton != null))) {
                             thisTestButton.requestFocusInWindow();
                             return;
                         } else if (thisVerifyButton.isVisible() && thisVerifyButton.isEnabled()) {
@@ -4214,7 +4293,7 @@ public class QAHelper extends javax.swing.JFrame {
             }
         }
 
-        if (!isLoggedIn && ((!isLinuxUbiquityMode && !isWindowsPE) || (currentButton == btnLogIn))) {
+        if (!loginAndVerificationsCurrentlyHidden && !isLoggedIn && ((!isLinuxUbiquityMode && !isWindowsPE) || (currentButton == btnLogIn))) {
             if (txtUsername.getText().trim().isEmpty()) {
                 txtUsername.requestFocusInWindow();
             } else if (pswPassword.getPassword().length == 0) {
@@ -4234,7 +4313,7 @@ public class QAHelper extends javax.swing.JFrame {
         boolean isAuthenticated = false;
 
         if (!isLoggedIn) {
-            username = txtUsername.getText().toLowerCase();
+            username = txtUsername.getText().trim().toLowerCase();
             loggedInUserInfo.clear();
             PCsCRMManager.logOut();
 
@@ -4242,13 +4321,13 @@ public class QAHelper extends javax.swing.JFrame {
 
             if (!username.isEmpty() && !loginPassword.isEmpty()) {
                 try {
-                    isAuthenticated = PCsCRMManager.authenticateCredentials(username, loginPassword, isTestMode);
+                    isAuthenticated = PCsCRMManager.authenticateCredentials(username, loginPassword, appVersion, ((computerSpecs != null) ? computerSpecs.getHardwareUUID() : "UNKNOWN"), isTestMode);
 
                     if (!isAuthenticated && username.contains("@")) {
-                        username = username.substring(0, username.indexOf("@"));
+                        username = username.substring(0, username.indexOf("@")).trim();
 
                         if (!username.isEmpty()) {
-                            isAuthenticated = PCsCRMManager.authenticateCredentials(username, loginPassword, isTestMode);
+                            isAuthenticated = PCsCRMManager.authenticateCredentials(username, loginPassword, appVersion, ((computerSpecs != null) ? computerSpecs.getHardwareUUID() : "UNKNOWN"), isTestMode);
                         }
                     }
 
@@ -4270,9 +4349,36 @@ public class QAHelper extends javax.swing.JFrame {
 
                     sendErrorEmail("authenticateUserException: " + authenticateUserException);
 
+                    String javaVersionNotice = "";
+                    if (!isMacOS && authenticateUserException.toString().contains("PCsCRM API Authenticate Response EMPTY")) {
+                        try {
+                            String[] javaVersionParts = System.getProperty("java.version").replaceAll("[^0-9.]", "").split("\\.");
+                            if (Integer.parseInt(javaVersionParts[0]) < 22) {
+                                // NOTE: On March 26th, 2026, something changed with "api.pcscrm.com" and using "HttpURLConnection" to connect would error with "java.net.SocketException: Connection reset" when run from within our Java 21 JLink JRE on macOS, but not error when run from a full Java 21 or 25 JDK.
+                                // This issue would happen with both JLink JREs of both Java 21 and Java 16 and on multiple versions of macOS as well a Linux and Windows with older Java 21 JLink JREs where logging in used to work fine, but continued to work fine with the Java 25 JLink JRE.
+                                // Therefore, this indicated that is must be be a change on the "api.pcscrm.com" server side of things, and that some Java module is the difference between it working or not.
+                                // I manually tried including modules that seemed like they could get used with HTTPS connections, and eventually found that inluding "jdk.crypto.ec" solved the issue for the Java 21 JLink JRE.
+                                // So, now "jdk.crypto.ec" will be included in the macOS apps built with Java 21 and Java 16, but if running on Linux or Windows with an older Java 21 JLink JRE,
+                                // show a warning to use Java 22 or newer because "jdk.crypto.ec" is now incorporated into "java.base" as of Java 22: https://seanjmullan.org/blog/2024/03/20/jdk22
+
+                                javaVersionNotice = "<b>NOTICE:</b> <em>Java 22 or newer is required to communicate with PCsCRM.</em> <u>You are currently running Java " + System.getProperty("java.version") + ".</u><br/><br/>";
+                            }
+                        } catch (NumberFormatException parseJavaVersionPartException) {
+                            // Ignore parseJavaVersionPartException
+                        }
+                    }
+
+                    JTextArea authenticateUserExceptionTextArea = new JTextArea(10, 60);
+                    authenticateUserExceptionTextArea.setText("authenticateUserException: " + authenticateUserException);
+                    authenticateUserExceptionTextArea.setEditable(false);
+                    authenticateUserExceptionTextArea.setLineWrap(true);
+                    authenticateUserExceptionTextArea.setWrapStyleWord(true);
+                    authenticateUserExceptionTextArea.setFont(new Font(Font.MONOSPACED, lblVersion.getFont().getStyle(), authenticateUserExceptionTextArea.getFont().getSize()));
+                    JScrollPane authenticateUserExceptionScrollPane = new JScrollPane(authenticateUserExceptionTextArea);
+
                     loadingWindow.closeWindow();
                     playAlertSound("error");
-                    JOptionPane.showMessageDialog(qaHelperWindow, "<html><b>Failed to Connect to <i>PCsCRM</i> to <i>Authenticate User</i></b></html>", "QA Helper  —  Authenticate User Error", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(qaHelperWindow, new Object[]{"<html><b>Error Communicating With <i>PCsCRM</i> to <i>Authenticate User</i></b><br/><br/>" + javaVersionNotice + "</html>", authenticateUserExceptionScrollPane}, "QA Helper  —  Authenticate User Error", JOptionPane.ERROR_MESSAGE);
                 }
             }
         }
@@ -4768,6 +4874,7 @@ public class QAHelper extends javax.swing.JFrame {
                         + "Wireless: " + escapeSingleLineSpecStringForHTML(computerSpecs.getWireless())
                         + ((!deviceTypeIsMotherboard && (deviceTypeIsLaptop || !computerSpecs.getBatteryHealthArray().isEmpty())) ? "<br/>Battery Health: " + escapeSingleLineSpecStringForHTML(computerSpecs.getBatteryHealthString() + loggedBatteryHealthWarningsAndErrors.toUpperCase()) : "")
                         + ((!computerSpecs.getPowerAdapter().isEmpty()) ? "<br/>Power Adapter: " + escapeSingleLineSpecStringForHTML(computerSpecs.getPowerAdapter()) : "")
+                        + "<br/>Hardware UUID: " + escapeSingleLineSpecStringForHTML(computerSpecs.getHardwareUUID())
                         + "<br/>Device Type: " + escapeSingleLineSpecStringForHTML(manualDeviceType); // Just want device type, don't need all the detail of "computerSpecs.getChassisType()".
                 // Can also specify HIDDEN EXTRA fields as HTML comments (which are not visible in PCsCRM), separated by newlines instead of "<br/>" tags (to not add a visible extra empty lines when viewed in PCsCRM).
                 //+ "\n<!-- Device Type: " + manualDeviceType + " -->" // Just want device type, don't need all the detail of "computerSpecs.getChassisType()".
@@ -4777,11 +4884,11 @@ public class QAHelper extends javax.swing.JFrame {
                 updateSpecs.put("Model", escapeSingleLineSpecStringForHTML((deviceTypeIsMotherboard ? computerSpecs.getMotherboardModel() : computerSpecs.getModel()), 150));
                 updateSpecs.put("Serial", escapeSingleLineSpecStringForHTML((deviceTypeIsMotherboard ? computerSpecs.getMotherboardSerial() : computerSpecs.getSerial()), 150));
                 updateSpecs.put("OS", ((isLinuxLiveBoot || isWindowsPE || isMacTestBoot || deviceTypeIsMotherboard) ? "N/A" : escapeSingleLineSpecStringForHTML(computerSpecs.getOS(), 150)));
-                updateSpecs.put("CPU", escapeSingleLineSpecStringForHTML(computerSpecs.getCPU(), 150));
-                updateSpecs.put("RAM", escapeSingleLineSpecStringForHTML((deviceTypeIsMotherboard ? computerSpecs.getMotherboardRAM() : computerSpecs.getRAM()), 150));
+                updateSpecs.put("CPU", escapeSingleLineSpecStringForHTML(((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("CPU")) ? "N/A" : computerSpecs.getCPU()), 150));
+                updateSpecs.put("RAM", escapeSingleLineSpecStringForHTML(((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("RAM")) ? computerSpecs.getMotherboardRAM() : computerSpecs.getRAM()), 150));
                 updateSpecs.put("Storage", (deviceTypeIsMotherboard ? "N/A" : escapeSingleLineSpecStringForHTML(computerSpecs.getStorage(), 150)));
                 updateSpecs.put("Storage Serial", (deviceTypeIsMotherboard ? "N/A" : escapeSingleLineSpecStringForHTML(computerSpecs.getStorageSerial(), 75))); // Version 2025.7.18-1 was the first to set this field.
-                updateSpecs.put("GPU", (deviceTypeIsMotherboard ? "N/A" : escapeSingleLineSpecStringForHTML(computerSpecs.getGPU(), 150)));
+                updateSpecs.put("GPU", ((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("GPU")) ? "N/A" : escapeSingleLineSpecStringForHTML(computerSpecs.getGPU(), 150)));
                 updateSpecs.put("Audio", escapeSingleLineSpecStringForHTML(computerSpecs.getAudio(), 150));
                 updateSpecs.put("Screen", (deviceTypeHasScreen ? escapeSingleLineSpecStringForHTML(computerSpecs.getScreenSize(), 150) : "N/A")); // Do not want to log a resolution on computers without built-in screens.
                 updateSpecs.put("Disc Drive", (deviceTypeIsMotherboard ? "N/A" : escapeSingleLineSpecStringForHTML(computerSpecs.getDiscDrive(), 150)));
@@ -4863,7 +4970,7 @@ public class QAHelper extends javax.swing.JFrame {
                     }
 
                     if (newStatusName != null) {
-                        if (pid.startsWith("FG") && (newStatusName.equals(statusNames[12]) || deviceTypeIsMotherboard)) { // Only add to Recent IDs when settings "statusNames[12]" or any status when "deviceTypeIsMotherboard" since those will never be set to "statusNames[12]" via QA Helper and will be completed on FG Specs.
+                        if (pid.startsWith("FG") && !Arrays.asList("demo", "class").contains(username) && (newStatusName.equals(statusNames[12]) || deviceTypeIsMotherboard)) { // Only add to Recent IDs when settings "statusNames[12]" or any status when "deviceTypeIsMotherboard" since those will never be set to "statusNames[12]" via QA Helper and will be completed on FG Specs.
                             (new SwingWorker<Void, Void>() {
                                 @Override
                                 protected Void doInBackground() throws Exception {
@@ -4913,7 +5020,7 @@ public class QAHelper extends javax.swing.JFrame {
                         undidOemConfigAfterLastStatus = false;
 
                         // Never hide login and tasks in Windows since QA Helper will never be shown in demo mode.
-                        hideLoginAndTasks = (!isLinuxUbiquityMode && !isWindows && newStatusName.equals(statusNames[12]));
+                        hideLoginAndVerifications = (!isLinuxUbiquityMode && !isWindows && newStatusName.equals(statusNames[12]));
 
                         (new SwingWorker<Void, Void>() {
                             @Override
@@ -5062,10 +5169,10 @@ public class QAHelper extends javax.swing.JFrame {
 
                             if (isLinux && !isLinuxLiveBoot) {
                                 matchedAppNames.add(thisAppName);
-                                installCommands += "echo \"\n\nINSTALLING SPOTIFY:\n\" && /usr/bin/curl --connect-timeout 5 -sS https://download.spotify.com/debian/pubkey_C85668DF69375001.gpg | /usr/bin/sudo /usr/bin/gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/spotify.gpg && echo \"deb http://repository.spotify.com stable non-free\" | /usr/bin/sudo /usr/bin/tee /etc/apt/sources.list.d/spotify.list > /dev/null && /usr/bin/sudo /usr/local/bin/apt install --no-install-recommends -y spotify-client && ";
+                                installCommands += "echo \"\n\nINSTALLING SPOTIFY:\n\" && /usr/bin/curl --connect-timeout 5 -sS https://download.spotify.com/debian/pubkey_5384CE82BA52C83A.asc | /usr/bin/sudo /usr/bin/gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/spotify.gpg && echo \"deb https://repository.spotify.com stable non-free\" | /usr/bin/sudo /usr/bin/tee /etc/apt/sources.list.d/spotify.list > /dev/null && /usr/bin/sudo /usr/local/bin/apt install --no-install-recommends -y spotify-client && ";
                                 // The Spotify repository will fail with the following error, and needs the signature added manually with per the instructions on https://www.spotify.com/us/download/linux so just add that manually before all Spotify installations.
-                                // W: GPG error: http://repository.spotify.com stable InRelease: The following signatures couldn't be verified because the public key is not available: NO_PUBKEY C85668DF69375001
-                                // E: The repository 'http://repository.spotify.com stable InRelease' is not signed.
+                                // W: GPG error: https://repository.spotify.com stable InRelease: The following signatures couldn't be verified because the public key is not available: NO_PUBKEY 5384CE82BA52C83A
+                                // E: The repository 'https://repository.spotify.com stable InRelease' is not signed.
                             }
 
                             break;
@@ -5276,7 +5383,7 @@ public class QAHelper extends javax.swing.JFrame {
                 int currentProductTypeIndex = Arrays.asList(productTypeNamesForDeviceType).indexOf(currentProductType);
                 if (currentProductTypeIndex >= 1) { // Don't want to pre-select index 0 which will always be "Unbuilt".
                     productTypesForDeviceTypeComboBox.setSelectedIndex(currentProductTypeIndex);
-                } else if ((productTypeNamesForDeviceType.length > 1) && productTypeNamesForDeviceType[0].startsWith("Unbuilt ")) {
+                } else if ((productTypeNamesForDeviceType.length > 1) && (productTypeNamesForDeviceType[0].startsWith("Unbuilt ") || (deviceTypeIsMotherboard && !motherboardIncludedComponents.isEmpty()))) {
                     productTypesForDeviceTypeComboBox.setSelectedIndex(1);
                 }
 
@@ -5412,6 +5519,7 @@ public class QAHelper extends javax.swing.JFrame {
                         String pcsCrmInventoryManagerURL = "https://" + (isTestMode ? "test." : "") + "pcscrm.com/inventory/editInventoryIDs";
                         String hiddenPCsCRMloginInputs = "";
 
+                        /* NOTE: At some point around April 2026, pcscrm.com includes the header "set-cookie: ASP.NET_SessionId=###; path=/; secure; HttpOnly; SameSite=Lax" which breaks being able to post from a local HTML page to auto-login.
                         for (int i = 0; i < 5; i++) {
                             hiddenPCsCRMloginInputs = String.join("\n", new WebReader(pcsCrmInventoryManagerURL).getOutputLinesContaining("<input type=\"hidden\""));
 
@@ -5457,7 +5565,7 @@ public class QAHelper extends javax.swing.JFrame {
                                 }
                             }
                         }
-
+                         */
                         boolean xclipWasInstalled = false;
                         boolean xclipIsInstalled = false;
 
@@ -5600,7 +5708,7 @@ public class QAHelper extends javax.swing.JFrame {
                             focusWindow();
 
                             String[] openedInventoryManagerDialogButtons = (returnValue.contains("enoughRAMforInventoryManager")
-                                    ? new String[]{"Bring Inventory Manager to Front", "Product Type Has Been Set", "Re-Log In to Inventory Manager", "Cancel"}
+                                    ? new String[]{"Bring Inventory Manager to Front", "Product Type Has Been Set", "Re-Open Inventory Manager", "Cancel"}
                                     : new String[]{"Product Type Has Been Set", "Cancel"});
 
                             playAlertSound((returnValue.contains("enoughRAMforInventoryManager") && returnValue.contains("didAutoLoginToInventoryManager") && returnValue.contains("didSetPIDtoClipboard") ? "success" : "beep"));
@@ -5609,9 +5717,9 @@ public class QAHelper extends javax.swing.JFrame {
                                     + (returnValue.contains("enoughRAMforInventoryManager")
                                     ? "<b>Opened " + (returnValue.contains("didAutoLoginToInventoryManager") ? "and Logged In to " : "") + "the Inventory Manager on PCsCRM.com</b>"
                                     + (returnValue.contains("didAutoLoginToInventoryManager") ? "" : "<br/><br/>"
-                                    + new TwemojiImage("Warning", qaHelperWindow).toImgTag("left") + " <b style='color: " + warningColorHTML + "'>Failed to automatically log in to the Inventory Manager on PCsCRM.com.</b>"
+                                    + new TwemojiImage("Warning", qaHelperWindow).toImgTag("left") + " <b style='color: " + warningColorHTML + "'>Unable to automatically log in to the Inventory Manager on PCsCRM.com.</b>"
                                     + "<br/>"
-                                    + new TwemojiImage("BackhandIndexPointingRight", qaHelperWindow).toImgTag("left") + " <i>USE THE \"Re-Log In to Inventory Manager\" BUTTON BELOW TO TRY AGAIN</i>")
+                                    + new TwemojiImage("BackhandIndexPointingRight", qaHelperWindow).toImgTag("left") + " <i>You must log in manually with your PCsCRM username and password.</i>")
                                     + (returnValue.contains("didSetPIDtoClipboard")
                                     ? "<br/><br/>"
                                     + new TwemojiImage("Clipboard", qaHelperWindow).toImgTag("left") + " The ID \"" + pid + "\" has been copied to the clipboard so you can paste it into the \"Computer ID\" text area."
@@ -5661,7 +5769,7 @@ public class QAHelper extends javax.swing.JFrame {
                                         }
                                     }
                                 } else {
-                                    if (openedInventoryManagerDialogResponseString.equals("Re-Log In to Inventory Manager")) {
+                                    if (openedInventoryManagerDialogResponseString.equals("Re-Open Inventory Manager")) {
                                         autoLoginToPCsCRMInventoryManagerPage();
                                     } else if (openedInventoryManagerDialogResponseString.equals("Product Type Has Been Set")) {
                                         writeToHelperLogFile("Set Product Type on PCsCRM.com");
@@ -6734,7 +6842,7 @@ public class QAHelper extends javax.swing.JFrame {
                             .addComponent(btnVerifyRemoteManagement)
                             .addComponent(btnVerifyWindowsLicense)))
                     .addComponent(btnSetConditionAndNotes, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                .addGap(UIScale.scale(12), UIScale.scale(12), UIScale.scale(12))
                 .addComponent(bottomSeparator, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
                 .addGroup(contentPaneLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
@@ -7106,7 +7214,10 @@ public class QAHelper extends javax.swing.JFrame {
             if (!currentStatus.equals(statusNames[3]) && !currentStatus.equals("UNKNOWN STATUS")) {
                 setActionsEnabled(false);
 
-                if (JOptionPane.showConfirmDialog(qaHelperWindow, "<html><b>Are you sure you want to set the status for ID \"" + pid + "\" back to <u>" + statusNames[3] + "</u>?</b></html>", "QA Helper  —  Confirm Reopen Repair", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, new TwemojiImage("HammerAndWrench", qaHelperWindow).toImageIcon(32)) == JOptionPane.YES_OPTION) {
+                JCheckBox resetAllTestCheckbox = new JCheckBox("Reset All Tests to UNVERIFIED");
+                resetAllTestCheckbox.setSelected(true);
+
+                if (JOptionPane.showConfirmDialog(qaHelperWindow, new Object[]{"<html><b>Are you sure you want to set the status for ID \"" + pid + "\" back to <u>" + statusNames[3] + "</u>?</b></html>", " ", resetAllTestCheckbox}, "QA Helper  —  Confirm Reopen Repair", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, new TwemojiImage("HammerAndWrench", qaHelperWindow).toImageIcon(32)) == JOptionPane.YES_OPTION) {
                     loadingWindow.setDefaultCloseOperation(javax.swing.WindowConstants.DO_NOTHING_ON_CLOSE);
                     setDefaultCloseOperation(javax.swing.WindowConstants.DO_NOTHING_ON_CLOSE);
 
@@ -7120,6 +7231,29 @@ public class QAHelper extends javax.swing.JFrame {
                             }
 
                             updateStatus(statusNames[3], currentStatus);
+
+                            if (resetAllTestCheckbox.isSelected()) {
+                                writeToHelperLogFile("Reset All Tests to UNVERIFIED");
+
+                                isCPUverified = false;
+                                isDriveHealthVerified = false;
+                                isDiscDriveVerified = false;
+                                isInternetVerified = false;
+                                isScreenVerified = false;
+                                isAudioVerified = false;
+                                isMicrophoneVerified = false;
+                                isCameraVerified = false;
+                                isKeyboardVerified = false;
+                                isMouseVerified = false;
+
+                                isBIOSverified = false;
+                                isPortsVerified = false;
+                                isDriversVerified = false;
+                                isUpdatesVerified = false;
+                                isWindowsLicenseVerified = false;
+                                isRemoteManagementVerified = false;
+                            }
+
                             return loadStatusHistory(false);
                         }
 
@@ -7602,15 +7736,15 @@ public class QAHelper extends javax.swing.JFrame {
 
             isTestMode = !isTestMode;
 
-            boolean loginAndTasksWasHidden = hideLoginAndTasks;
-            if (loginAndTasksWasHidden) {
-                hideLoginAndTasks = false;
+            boolean loginWasHidden = hideLoginAndVerifications;
+            if (loginWasHidden) {
+                hideLoginAndVerifications = false;
             }
 
             displayComputerSpecs();
 
-            if (loginAndTasksWasHidden) {
-                hideLoginAndTasks = true;
+            if (loginWasHidden) {
+                hideLoginAndVerifications = true;
             }
 
             setActionsEnabled(true);
@@ -7641,6 +7775,7 @@ public class QAHelper extends javax.swing.JFrame {
                 String pcsCrmForgotPasswordURL = "https://" + (isTestMode ? "test." : "") + "pcscrm.com/login.aspx";
                 String hiddenPCsCRMloginInputs = "";
 
+                /* NOTE: At some point around April 2026, pcscrm.com includes the header "set-cookie: ASP.NET_SessionId=###; path=/; secure; HttpOnly; SameSite=Lax" which breaks being able to post from a local HTML page to auto-open the forgot password prompt.
                 for (int i = 0; i < 5; i++) {
                     hiddenPCsCRMloginInputs = String.join("\n", new WebReader(pcsCrmForgotPasswordURL).getOutputLinesContaining("<input type=\"hidden\""));
 
@@ -7678,7 +7813,7 @@ public class QAHelper extends javax.swing.JFrame {
                         }
                     }
                 }
-
+                 */
                 if (isLinux) {
                     boolean enoughRAMforWebBrowser = true;
 
@@ -7818,12 +7953,14 @@ public class QAHelper extends javax.swing.JFrame {
             setActionsEnabled(false);
 
             ArrayList<String> cpuStressTestDurationOptions = new ArrayList<>(Arrays.asList("2 Minutes", "3 Minutes", "5 Minutes", "10 Minutes", "15 Minutes", "20 Minutes", "30 Minutes"));
-            if (isTestMode) {
+
+            boolean includeOneMinuteOption = (isTestMode || hideLoginAndVerifications || (isLoggedIn && Arrays.asList("demo", "class").contains(username)));
+            if (includeOneMinuteOption) {
                 cpuStressTestDurationOptions.add(0, "1 Minute");
             }
 
             JComboBox cpuStressTestDurationMinutesComboBox = new JComboBox<>(cpuStressTestDurationOptions.toArray());
-            cpuStressTestDurationMinutesComboBox.setSelectedIndex((isTestMode ? 0 : 1));
+            cpuStressTestDurationMinutesComboBox.setSelectedIndex((includeOneMinuteOption ? 0 : 1));
 
             int cpuStressTestPromptReturn = JOptionPane.showConfirmDialog(qaHelperWindow, new Object[]{"<html><b>CPU Stress Test will run for the duration specified below, stressing the full capacity of this computers processor.</b>"
                 + "<br/>"
@@ -8333,8 +8470,12 @@ public class QAHelper extends javax.swing.JFrame {
                                 if (cpuStressTestCompletedDialogResponseString.contains("Test")) {
                                     setActionsEnabled(true);
                                     btnStressCPUActionPerformed(evt);
-                                } else if (stressPassed && !isCPUverified && btnVerifyCPU.isVisible() && btnVerifyCPU.isEnabled()) {
-                                    btnVerifyCPUActionPerformed(null);
+                                } else if (stressPassed) {
+                                    if (!isCPUverified && btnVerifyCPU.isVisible() && btnVerifyCPU.isEnabled()) {
+                                        btnVerifyCPUActionPerformed(null);
+                                    } else if (!isPeripheralTestMode) {
+                                        focusNextTestTaskVerifyButton(btnStressCPU);
+                                    }
                                 }
                             }
                         } catch (HeadlessException | InterruptedException | ExecutionException finishedStressException) {
@@ -8399,21 +8540,27 @@ public class QAHelper extends javax.swing.JFrame {
                     hdSentinelOutputTextArea.setFont(new Font(Font.MONOSPACED, lblVersion.getFont().getStyle(), hdSentinelOutputTextArea.getFont().getSize()));
                     JScrollPane hdSentinelOutputScrollPane = new JScrollPane(hdSentinelOutputTextArea);
 
+                    // On 04/24/26, drive health checks changed FROM: Power On Time < 2500 days, Estimated Remaining Lifetime > 399 days, Description CONTAINS "is PERFECT", Tip IS "No actions needed."
+                    // TO: Health Percentage >= 70%, Power On Time < 3000 days (Ignoring >= 10000 days as a false reading), Description CONTAINS "is PERFECT", Tip IS "No actions needed." OR "It is recommended to continuously monitor the hard disk status."
                     JOptionPane.showMessageDialog(qaHelperWindow, new Object[]{
                         "<html><b>Confirm Specs for Every Drive:</b><br/><br/>"
-                        + "<b>Power on time</b> <i>MUST</i> be <u>LESS than 2500 days</u><br/>"
-                        + "<b>Est. lifetime</b> <i>MUST</i> be <u>GREATER than 399 days</u><br/>"
-                        + "The <b>description</b> <i>MUST</i> be <u>PERFECT</u><br/>"
-                        + "The <b>last line</b> <i>MUST</i> be <u>No actions needed.</u><br/>"
+                        + "<b>Health</b> <i>MUST</i> be <u>70% or GREATER</u>.<br/>"
+                        + "<b>Power on time</b> <i>MUST</i> be <u>LESS than 3,000 days</u> <i>(ignoring 10,000 days or MORE as a false reading)</i>.<br/>"
+                        + "The <b>description</b> <i>MUST</i> contain <u>\"is PERFECT\"</u>.<br/>"
+                        + "The <b>last line</b> <i>MUST</i> be <u>\"No actions needed\"</u> <i>OR</i> <u>\"It is recommended to continuously monitor the hard disk status\"</u>.<br/>"
                         + "<br/>"
                         + "</html>",
                         hdSentinelOutputScrollPane}, "QA Helper  —  Drive Health", JOptionPane.PLAIN_MESSAGE, new TwemojiImage("Hospital", qaHelperWindow).toImageIcon());
 
-                    if (!computerSpecs.getDriveHealthWarning() && !computerSpecs.getDriveRecalled() && !isDriveHealthVerified && btnVerifyDriveHealth.isVisible() && btnVerifyDriveHealth.isEnabled()) {
+                    if (!computerSpecs.getDriveHealthWarning() && !computerSpecs.getDriveRecalled()) {
                         String disksFormattedWithoutPartitionTable = computerSpecs.getDisksFormattedWithoutPartitionTable();
 
                         if (disksFormattedWithoutPartitionTable.isEmpty()) {
-                            btnVerifyDriveHealthActionPerformed(null);
+                            if (!isDriveHealthVerified && btnVerifyDriveHealth.isVisible() && btnVerifyDriveHealth.isEnabled()) {
+                                btnVerifyDriveHealthActionPerformed(null);
+                            } else if (!isPeripheralTestMode) {
+                                focusNextTestTaskVerifyButton(btnDriveHealth);
+                            }
                         }
                     }
                 } else {
@@ -8467,6 +8614,8 @@ public class QAHelper extends javax.swing.JFrame {
 
                         if (!isDriveHealthVerified && btnVerifyDriveHealth.isVisible() && btnVerifyDriveHealth.isEnabled()) {
                             btnVerifyDriveHealthActionPerformed(null);
+                        } else if (!isPeripheralTestMode) {
+                            focusNextTestTaskVerifyButton(btnDriveHealth);
                         }
                     } catch (IOException openDriveDxException) {
                         if (isTestMode) {
@@ -8535,6 +8684,8 @@ public class QAHelper extends javax.swing.JFrame {
 
                 if (!isDiscDriveVerified && btnVerifyDiscDrive.isVisible() && btnVerifyDiscDrive.isEnabled()) {
                     btnVerifyDiscDriveActionPerformed(null);
+                } else if (!isPeripheralTestMode) {
+                    focusNextTestTaskVerifyButton(btnEjectDiscDrive);
                 }
             } catch (IOException | InterruptedException ejectDiscException) {
                 if (isTestMode) {
@@ -8570,15 +8721,15 @@ public class QAHelper extends javax.swing.JFrame {
                 new LinuxAutoScripts("Disc Drive " + (isDiscDriveVerified ? "Verified" : "Unverified"), adminPassword);
 
                 if (!hasDiscDrive) {
-                    boolean loginAndTasksWasHidden = hideLoginAndTasks;
-                    if (loginAndTasksWasHidden) {
-                        hideLoginAndTasks = false;
+                    boolean loginWasHidden = hideLoginAndVerifications;
+                    if (loginWasHidden) {
+                        hideLoginAndVerifications = false;
                     }
 
                     displayComputerSpecs();
 
-                    if (loginAndTasksWasHidden) {
-                        hideLoginAndTasks = true;
+                    if (loginWasHidden) {
+                        hideLoginAndVerifications = true;
                     }
                 }
 
@@ -8594,10 +8745,16 @@ public class QAHelper extends javax.swing.JFrame {
     }//GEN-LAST:event_btnVerifyDiscDriveActionPerformed
 
     private void btnTestInternetActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnTestInternetActionPerformed
-        if (actionsEnabled && !isWindowsPE) {
-            setActionsEnabled(false);
+        boolean isBackgroundTest = (evt == null);
 
-            loadingWindow.setLoadingTextAndDisplay("QA Helper is " + (isLinux ? "Preparing to Test Internet" : "Testing Internet"), "Testing", "SatelliteAntenna");
+        if (isBackgroundTest || (actionsEnabled && !isWindowsPE)) {
+            if (isBackgroundTest) {
+                System.out.println("Automatic Background Internet Test Started");
+            } else {
+                setActionsEnabled(false);
+
+                loadingWindow.setLoadingTextAndDisplay("QA Helper is " + (isLinux ? "Preparing to Test Internet" : "Testing Internet"), "Testing", "SatelliteAntenna");
+            }
 
             (new SwingWorker<String, String>() {
                 @Override
@@ -8745,6 +8902,9 @@ public class QAHelper extends javax.swing.JFrame {
                                     if (ethernetCableConnected || (hasWiFiCard && !wiFiTestPassed && !wiFiTestSkipped)) {
                                         // Do Wi-Fi test first if Ethernet is not connected.
                                         break;
+                                    } else if (isBackgroundTest) {
+                                        ethernetTestSkipped = true;
+                                        break;
                                     } else {
                                         loadingWindow.setAlwaysOnTop(false);
                                         playAlertSound("error");
@@ -8773,6 +8933,10 @@ public class QAHelper extends javax.swing.JFrame {
 
                                 for (String thisEthernetNetworkDeviceID : ethernetNetworkDeviceIDs) {
                                     for (int ethernetTestAttempt = 0; ethernetTestAttempt < 5; ethernetTestAttempt++) {
+                                        if (isMacOS && new CommandReader(new String[]{"/usr/sbin/ipconfig", "getifaddr", thisEthernetNetworkDeviceID}).getFirstOutputLineContaining(".").isEmpty()) {
+                                            break; // On Apple Silicon Macs there may be multiple internal Ethernet devices (even if there is not a physical Ethernet port), so only attempt on devices with an IP (ie. an adapter is connected) to not hang too long on unconnected devices.
+                                        }
+
                                         String thisWindowsEthernetNetworkDeviceIP = (isWindows ? new CommandReader(new String[]{"\\Windows\\System32\\netsh.exe", "interface", "ipv4", "show", "addresses", thisEthernetNetworkDeviceID}).getFirstOutputLineContaining("IP Address:").replace("IP Address:", "").trim() : "");
 
                                         // Can't only check for "Sent = 1, Received = 1" from ping on Windows because "Destination host unreachable" error will show no packet loss.
@@ -8798,6 +8962,9 @@ public class QAHelper extends javax.swing.JFrame {
                                 }
 
                                 if (ethernetTestPassed) {
+                                    break;
+                                } else if (isBackgroundTest) {
+                                    ethernetTestSkipped = true;
                                     break;
                                 } else {
                                     loadingWindow.setAlwaysOnTop(false);
@@ -8901,35 +9068,40 @@ public class QAHelper extends javax.swing.JFrame {
                                     }
 
                                     if (wiFiIsOff) {
-                                        loadingWindow.setAlwaysOnTop(false);
-                                        playAlertSound("error");
-                                        String[] turnOnWiFiDialogButtons = new String[]{"Test Wi-Fi Again", "Skip Wi-Fi Test"};
-                                        wiFiTestSkipped = (JOptionPane.showOptionDialog(qaHelperWindow, "<html>"
-                                                + new TwemojiImage("Prohibited", qaHelperWindow).toImgTag("left") + " <b>Wi-Fi is DISABLED</b>"
-                                                + "<br/><br/>"
-                                                + new TwemojiImage("IndexPointingUp", qaHelperWindow).toImgTag("left") + " <i>Manually <u>TURN ON</u> any Wi-Fi switches, buttons, or software settings and then click \"Test Wi-Fi Again\"."
-                                                + "<br/><br/>"
-                                                + new TwemojiImage("BackhandIndexPointingRight", qaHelperWindow).toImgTag("left") + " If all Wi-Fi switches, buttons, and software settings are turned on,<br/>"
-                                                + (isLinuxBootedFromNetwork
-                                                        ? new TwemojiImage("Blank", qaHelperWindow).toImgTag("left") + " you <u>MAY NOT BE ABLE TO TEST Wi-Fi</u> since you are currently booted via Ethernet."
-                                                        + "<br/><br/>"
-                                                        + new TwemojiImage("Prohibited", qaHelperWindow).toImgTag("left") + " <u>DO NOT DISCONNECT</u> the Ethernet cable since that will freeze this computer and you will need to reboot."
-                                                        : new TwemojiImage("Blank", qaHelperWindow).toImgTag("left") + " <u>DISCONNECT</u> the Ethernet cable and then click \"Test Wi-Fi Again\".")
-                                                + "</i>"
-                                                + "<br/><br/>"
-                                                + new TwemojiImage("DoubleExclamationMark", qaHelperWindow).toImgTag("left") + " If all Wi-Fi switches, buttons, and software settings are turned on "
-                                                + (isLinuxBootedFromNetwork
-                                                        ? "and this test fails after multiple attempts,<br/>"
-                                                        + new TwemojiImage("Blank", qaHelperWindow).toImgTag("left") + " click \"Skip Wi-Fi Test\" and then test Wi-Fi again after you're booted into the installed OS."
-                                                        : "and the Ethernet cable is disconnected and<br/>"
-                                                        + new TwemojiImage("Blank", qaHelperWindow).toImgTag("left") + " this test fails after multiple attempts, click \"Skip Wi-Fi Test\" and <u>CONSULT AN INSTRUCTOR</u>.")
-                                                + "</html>", "QA Helper  —  Wi-Fi Disabled", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE, new TwemojiImage("SatelliteAntenna", qaHelperWindow).toImageIcon(32), turnOnWiFiDialogButtons, turnOnWiFiDialogButtons[0]) != JOptionPane.YES_OPTION);
-                                        loadingWindow.setAlwaysOnTop(true);
-
-                                        if (wiFiTestSkipped) {
+                                        if (isBackgroundTest) {
+                                            wiFiTestSkipped = true;
                                             break;
                                         } else {
-                                            TimeUnit.SECONDS.sleep(2);
+                                            loadingWindow.setAlwaysOnTop(false);
+                                            playAlertSound("error");
+                                            String[] turnOnWiFiDialogButtons = new String[]{"Test Wi-Fi Again", "Skip Wi-Fi Test"};
+                                            wiFiTestSkipped = (JOptionPane.showOptionDialog(qaHelperWindow, "<html>"
+                                                    + new TwemojiImage("Prohibited", qaHelperWindow).toImgTag("left") + " <b>Wi-Fi is DISABLED</b>"
+                                                    + "<br/><br/>"
+                                                    + new TwemojiImage("IndexPointingUp", qaHelperWindow).toImgTag("left") + " <i>Manually <u>TURN ON</u> any Wi-Fi switches, buttons, or software settings and then click \"Test Wi-Fi Again\"."
+                                                    + "<br/><br/>"
+                                                    + new TwemojiImage("BackhandIndexPointingRight", qaHelperWindow).toImgTag("left") + " If all Wi-Fi switches, buttons, and software settings are turned on,<br/>"
+                                                    + (isLinuxBootedFromNetwork
+                                                            ? new TwemojiImage("Blank", qaHelperWindow).toImgTag("left") + " you <u>MAY NOT BE ABLE TO TEST Wi-Fi</u> since you are currently booted via Ethernet."
+                                                            + "<br/><br/>"
+                                                            + new TwemojiImage("Prohibited", qaHelperWindow).toImgTag("left") + " <u>DO NOT DISCONNECT</u> the Ethernet cable since that will freeze this computer and you will need to reboot."
+                                                            : new TwemojiImage("Blank", qaHelperWindow).toImgTag("left") + " <u>DISCONNECT</u> the Ethernet cable and then click \"Test Wi-Fi Again\".")
+                                                    + "</i>"
+                                                    + "<br/><br/>"
+                                                    + new TwemojiImage("DoubleExclamationMark", qaHelperWindow).toImgTag("left") + " If all Wi-Fi switches, buttons, and software settings are turned on "
+                                                    + (isLinuxBootedFromNetwork
+                                                            ? "and this test fails after multiple attempts,<br/>"
+                                                            + new TwemojiImage("Blank", qaHelperWindow).toImgTag("left") + " click \"Skip Wi-Fi Test\" and then test Wi-Fi again after you're booted into the installed OS."
+                                                            : "and the Ethernet cable is disconnected and<br/>"
+                                                            + new TwemojiImage("Blank", qaHelperWindow).toImgTag("left") + " this test fails after multiple attempts, click \"Skip Wi-Fi Test\" and <u>CONSULT AN INSTRUCTOR</u>.")
+                                                    + "</html>", "QA Helper  —  Wi-Fi Disabled", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE, new TwemojiImage("SatelliteAntenna", qaHelperWindow).toImageIcon(32), turnOnWiFiDialogButtons, turnOnWiFiDialogButtons[0]) != JOptionPane.YES_OPTION);
+                                            loadingWindow.setAlwaysOnTop(true);
+
+                                            if (wiFiTestSkipped) {
+                                                break;
+                                            } else {
+                                                TimeUnit.SECONDS.sleep(2);
+                                            }
                                         }
                                     } else {
                                         break;
@@ -9052,7 +9224,7 @@ public class QAHelper extends javax.swing.JFrame {
                                     }
                                 }
 
-                                if (connectedWiFiNetworkName.isEmpty()) {
+                                if (connectedWiFiNetworkName.isEmpty() || connectedWiFiNetworkName.equals("Free Geek")) { // Don't try to use open "Free Geek" network since it has captive portal agreement which may not have been accepted which would cause the test to fail.
                                     boolean attemptedToConnectToWiFiNetwork = false;
 
                                     if (isLinux) {
@@ -9063,6 +9235,15 @@ public class QAHelper extends javax.swing.JFrame {
                                             } catch (IOException | InterruptedException connectToFreeGeekWiFiNetworkException) {
                                                 if (isTestMode) {
                                                     System.out.println("connectToFreeGeekWiFiNetworkException: " + connectToFreeGeekWiFiNetworkException);
+                                                }
+                                            }
+                                        } else if (String.join("\n", wiFiNetworks).contains(" " + privateStrings.getHaciendaCdcWiFiName() + " ")) {
+                                            try {
+                                                Runtime.getRuntime().exec(new String[]{"/usr/bin/nmcli", "device", "wifi", "connect", privateStrings.getHaciendaCdcWiFiName(), "password", privateStrings.getHaciendaCdcWiFiPassword()}).waitFor();
+                                                attemptedToConnectToWiFiNetwork = true;
+                                            } catch (IOException | InterruptedException connectToHaciendaCdcWiFiNetworkException) {
+                                                if (isTestMode) {
+                                                    System.out.println("connectToHaciendaCdcWiFiNetworkException: " + connectToHaciendaCdcWiFiNetworkException);
                                                 }
                                             }
                                         }
@@ -9098,6 +9279,17 @@ public class QAHelper extends javax.swing.JFrame {
                                                 } catch (IOException | InterruptedException connectToFreeGeekWiFiNetworkException) {
                                                     if (isTestMode) {
                                                         System.out.println("connectToFreeGeekWiFiNetworkException: " + connectToFreeGeekWiFiNetworkException);
+                                                    }
+                                                }
+                                            }
+                                        } else if ((String.join("\n", wiFiNetworks) + "\n").contains("\t" + privateStrings.getHaciendaCdcWiFiName() + "\n")) {
+                                            for (String thisWiFiNetworkDeviceID : wiFiNetworkDeviceIDs) {
+                                                try {
+                                                    Runtime.getRuntime().exec(new String[]{"/usr/sbin/networksetup", "-setairportnetwork", thisWiFiNetworkDeviceID, privateStrings.getHaciendaCdcWiFiName(), privateStrings.getHaciendaCdcWiFiPassword()}).waitFor();
+                                                    attemptedToConnectToWiFiNetwork = true;
+                                                } catch (IOException | InterruptedException connectToHaciendaCdcWiFiNetworkException) {
+                                                    if (isTestMode) {
+                                                        System.out.println("connectToHaciendaCdcWiFiNetworkException: " + connectToHaciendaCdcWiFiNetworkException);
                                                     }
                                                 }
                                             }
@@ -9251,6 +9443,9 @@ public class QAHelper extends javax.swing.JFrame {
 
                                 if (wiFiTestPassed) {
                                     break;
+                                } else if (isBackgroundTest) {
+                                    wiFiTestSkipped = true;
+                                    break;
                                 } else {
                                     loadingWindow.setAlwaysOnTop(false);
                                     playAlertSound("error");
@@ -9403,18 +9598,22 @@ public class QAHelper extends javax.swing.JFrame {
 
                 @Override
                 protected void process(java.util.List<String> tasks) {
-                    tasks.forEach((thisTask) -> {
-                        if (thisTask.equals("wifi")) {
-                            loadingWindow.setLoadingTextAndDisplay("QA Helper is Testing Wi-Fi", "Testing", "SatelliteAntenna");
-                        } else if (thisTask.equals("ethernet")) {
-                            loadingWindow.setLoadingTextAndDisplay("QA Helper is Testing Ethernet", "Testing", "SatelliteAntenna");
-                        }
-                    });
+                    if (!isBackgroundTest) {
+                        tasks.forEach((thisTask) -> {
+                            if (thisTask.equals("wifi")) {
+                                loadingWindow.setLoadingTextAndDisplay("QA Helper is Testing Wi-Fi", "Testing", "SatelliteAntenna");
+                            } else if (thisTask.equals("ethernet")) {
+                                loadingWindow.setLoadingTextAndDisplay("QA Helper is Testing Ethernet", "Testing", "SatelliteAntenna");
+                            }
+                        });
+                    }
                 }
 
                 @Override
                 protected void done() {
-                    loadingWindow.closeWindow();
+                    if (!isBackgroundTest) {
+                        loadingWindow.closeWindow();
+                    }
 
                     try {
                         String internetTestResult = get();
@@ -9428,26 +9627,47 @@ public class QAHelper extends javax.swing.JFrame {
                             didFullPass = false;
                         }
 
-                        ArrayList<String> internetTestCompletedButtons = new ArrayList<>(Arrays.asList("Continue", "Test Internet Again"));
+                        if (isBackgroundTest) {
+                            System.out.println("Automatic Background Internet Test " + (didFullPass ? "FULL PASSED" : (didPartialPass ? "PARTIAL PASSED" : "FAILED")));
 
-                        if (!didFullPass) {
-                            Collections.reverse(internetTestCompletedButtons);
-                        }
+                            if (didFullPass && !isInternetVerified) {
+                                isInternetVerified = !isInternetVerified;
 
-                        playAlertSound(didFullPass ? "success" : "error");
-                        focusWindow();
-                        int internetTestCompletedDialogResponse = JOptionPane.showOptionDialog(qaHelperWindow, internetTestResult, "QA Helper  —  " + internetTestTitle, JOptionPane.DEFAULT_OPTION, (didFullPass ? JOptionPane.INFORMATION_MESSAGE : (didPartialPass ? JOptionPane.WARNING_MESSAGE : JOptionPane.ERROR_MESSAGE)), new TwemojiImage("SatelliteAntenna", qaHelperWindow).toImageIcon(), internetTestCompletedButtons.toArray(), internetTestCompletedButtons.get(0));
+                                boolean hasWiFi = computerSpecs.getWireless().contains("Wi-Fi");
 
-                        String internetTestCompletedDialogResponseString = "Continue";
-                        if (internetTestCompletedDialogResponse > -1) {
-                            internetTestCompletedDialogResponseString = internetTestCompletedButtons.get(internetTestCompletedDialogResponse);
-                        }
+                                writeToHelperLogFile("Test: Internet " + (hasWiFi ? "" : "(No Wi-Fi) ") + (isInternetVerified ? "Verified" : "UNVERIFIED"));
 
-                        if (internetTestCompletedDialogResponseString.contains("Test")) {
-                            setActionsEnabled(true);
-                            btnTestInternetActionPerformed(evt);
-                        } else if (didFullPass && !isInternetVerified && btnVerifyInternet.isVisible() && btnVerifyInternet.isEnabled()) {
-                            btnVerifyInternetActionPerformed(null);
+                                btnVerifyInternet.setText((isInternetVerified ? "Verified" : "Verify"));
+                                btnVerifyInternet.setFont(btnVerifyInternet.getFont().deriveFont((isInternetVerified ? Font.BOLD : lblVersion.getFont().getStyle())));
+                                btnVerifyInternet.setForeground(isInternetVerified ? verifiedColor : defaultColor);
+                                btnVerifyInternet.setBorderPainted(!isInternetVerified);
+                            }
+                        } else {
+                            ArrayList<String> internetTestCompletedButtons = new ArrayList<>(Arrays.asList("Continue", "Test Internet Again"));
+
+                            if (!didFullPass) {
+                                Collections.reverse(internetTestCompletedButtons);
+                            }
+
+                            playAlertSound(didFullPass ? "success" : "error");
+                            focusWindow();
+                            int internetTestCompletedDialogResponse = JOptionPane.showOptionDialog(qaHelperWindow, internetTestResult, "QA Helper  —  " + internetTestTitle, JOptionPane.DEFAULT_OPTION, (didFullPass ? JOptionPane.INFORMATION_MESSAGE : (didPartialPass ? JOptionPane.WARNING_MESSAGE : JOptionPane.ERROR_MESSAGE)), new TwemojiImage("SatelliteAntenna", qaHelperWindow).toImageIcon(), internetTestCompletedButtons.toArray(), internetTestCompletedButtons.get(0));
+
+                            String internetTestCompletedDialogResponseString = "Continue";
+                            if (internetTestCompletedDialogResponse > -1) {
+                                internetTestCompletedDialogResponseString = internetTestCompletedButtons.get(internetTestCompletedDialogResponse);
+                            }
+
+                            if (internetTestCompletedDialogResponseString.contains("Test")) {
+                                setActionsEnabled(true);
+                                btnTestInternetActionPerformed(evt);
+                            } else if (didFullPass) {
+                                if (!isInternetVerified && btnVerifyInternet.isVisible() && btnVerifyInternet.isEnabled()) {
+                                    btnVerifyInternetActionPerformed(null);
+                                } else if (!isPeripheralTestMode) {
+                                    focusNextTestTaskVerifyButton(btnTestInternet);
+                                }
+                            }
                         }
                     } catch (HeadlessException | InterruptedException | ExecutionException finishInternetTestException) {
                         if (isTestMode) {
@@ -9455,7 +9675,9 @@ public class QAHelper extends javax.swing.JFrame {
                         }
                     }
 
-                    setActionsEnabled(true);
+                    if (!isBackgroundTest) {
+                        setActionsEnabled(true);
+                    }
                 }
             }).execute();
         } else {
@@ -9482,15 +9704,15 @@ public class QAHelper extends javax.swing.JFrame {
                 new LinuxAutoScripts("Internet " + (isInternetVerified ? "Verified" : "Unverified"), adminPassword);
 
                 if (computerSpecs.getWirelessArray().isEmpty()) {
-                    boolean loginAndTasksWasHidden = hideLoginAndTasks;
-                    if (loginAndTasksWasHidden) {
-                        hideLoginAndTasks = false;
+                    boolean loginWasHidden = hideLoginAndVerifications;
+                    if (loginWasHidden) {
+                        hideLoginAndVerifications = false;
                     }
 
                     displayComputerSpecs();
 
-                    if (loginAndTasksWasHidden) {
-                        hideLoginAndTasks = true;
+                    if (loginWasHidden) {
+                        hideLoginAndVerifications = true;
                     }
                 }
 
@@ -9648,8 +9870,12 @@ public class QAHelper extends javax.swing.JFrame {
                                         setActionsEnabled(true);
                                         btnTestScreenActionPerformed(evt);
                                     } else {
-                                        if (didSolidColorsScreenTest && !isScreenVerified && btnVerifyScreen.isVisible() && btnVerifyScreen.isEnabled()) {
-                                            btnVerifyScreenActionPerformed(null);
+                                        if (didSolidColorsScreenTest) {
+                                            if (!isScreenVerified && btnVerifyScreen.isVisible() && btnVerifyScreen.isEnabled()) {
+                                                btnVerifyScreenActionPerformed(null);
+                                            } else if (!isPeripheralTestMode) {
+                                                focusNextTestTaskVerifyButton(btnTestScreen);
+                                            }
                                         }
 
                                         setActionsEnabled(true);
@@ -9730,9 +9956,12 @@ public class QAHelper extends javax.swing.JFrame {
                                     setActionsEnabled(true);
                                     btnTestScreenActionPerformed(evt);
                                 } else {
-                                    if (screenTestFinished && (!hasTouchscreen || (hasTouchscreen && didTouchscreenTest))
-                                            && !isScreenVerified && btnVerifyScreen.isVisible() && btnVerifyScreen.isEnabled()) {
-                                        btnVerifyScreenActionPerformed(null);
+                                    if (screenTestFinished && (!hasTouchscreen || (hasTouchscreen && didTouchscreenTest))) {
+                                        if (!isScreenVerified && btnVerifyScreen.isVisible() && btnVerifyScreen.isEnabled()) {
+                                            btnVerifyScreenActionPerformed(null);
+                                        } else if (!isPeripheralTestMode) {
+                                            focusNextTestTaskVerifyButton(btnTestScreen);
+                                        }
                                     }
 
                                     setActionsEnabled(true);
@@ -10341,11 +10570,15 @@ public class QAHelper extends javax.swing.JFrame {
                             setActionsEnabled(true);
                             btnTestAudioActionPerformed(evt);
                         } else {
-                            if (didMinimumAudioTests && !isAudioVerified && btnVerifyAudio.isVisible()) {
-                                if (btnVerifyAudio.isEnabled()) {
-                                    btnVerifyAudioActionPerformed(null);
-                                } else {
-                                    // If btnVerifyAudio is not enabled (such as when in WinPE), just focus the next test button.
+                            if (didMinimumAudioTests) {
+                                if (!isAudioVerified && btnVerifyAudio.isVisible()) {
+                                    if (btnVerifyAudio.isEnabled()) {
+                                        btnVerifyAudioActionPerformed(null);
+                                    } else {
+                                        // If btnVerifyAudio is not enabled (such as when in WinPE), just focus the next test button.
+                                        focusNextTestTaskVerifyButton(btnTestAudio);
+                                    }
+                                } else if (!isPeripheralTestMode) {
                                     focusNextTestTaskVerifyButton(btnTestAudio);
                                 }
                             }
@@ -10927,7 +11160,9 @@ public class QAHelper extends javax.swing.JFrame {
                                         "-e", "try",
                                         "-e", "tell application id \"com.apple.QuickTimePlayerX\" to every window",
                                         "-e", "on error automationAccessErrorMessage number automationAccessErrorNumber",
-                                        "-e", "if (automationAccessErrorNumber is equal to -1743) then",
+                                        "-e", "if ((automationAccessErrorNumber is equal to -1743) or (automationAccessErrorNumber is equal to -1712)) then",
+                                        // Error -1743 = Not authorized to send Apple events to app.
+                                        // Error -1712 = AppleEvent timed out.
                                         "-e", "return \"NEEDS QUICKTIME AUTOMATION ACCESS\"",
                                         "-e", "end if",
                                         "-e", "end try",
@@ -11441,8 +11676,12 @@ public class QAHelper extends javax.swing.JFrame {
                                 if (microphoneTestCompletedDialogResponseString.contains("Test")) {
                                     setActionsEnabled(true);
                                     btnTestMicrophoneActionPerformed(evt);
-                                } else if (microphoneTestDidRecord && !isMicrophoneVerified && btnVerifyMicrophone.isVisible() && btnVerifyMicrophone.isEnabled()) {
-                                    btnVerifyMicrophoneActionPerformed(null);
+                                } else if (microphoneTestDidRecord) {
+                                    if (!isMicrophoneVerified && btnVerifyMicrophone.isVisible() && btnVerifyMicrophone.isEnabled()) {
+                                        btnVerifyMicrophoneActionPerformed(null);
+                                    } else if (!isPeripheralTestMode) {
+                                        focusNextTestTaskVerifyButton(btnTestMicrophone);
+                                    }
                                 }
                             } catch (HeadlessException | InterruptedException | ExecutionException finishMicrophoneTestException) {
                                 if (isTestMode) {
@@ -11519,7 +11758,9 @@ public class QAHelper extends javax.swing.JFrame {
                 JOptionPane.showMessageDialog(qaHelperWindow, "<html><b>No Camera Detected</b><br/><br/><i>If this computer is supposed to have a camera, then Camera Test has failed.</i></html>", "QA Helper  —  Camera Test Error", JOptionPane.ERROR_MESSAGE, new TwemojiImage("NoEntry", qaHelperWindow).toImageIcon(32));
 
                 setActionsEnabled(true);
-                focusNextTestTaskVerifyButton(btnTestCamera);
+                if (!isPeripheralTestMode) {
+                    focusNextTestTaskVerifyButton(btnTestCamera);
+                }
             } else {
                 boolean enoughRAMforCameraTest = true;
 
@@ -11693,7 +11934,7 @@ public class QAHelper extends javax.swing.JFrame {
                                             }
                                         }
 
-                                        for (int waitForWebCamApp = 0; waitForWebCamApp < 30; waitForWebCamApp++) {
+                                        for (int waitForWebCamApp = 0; waitForWebCamApp < 60; waitForWebCamApp++) {
                                             TimeUnit.MILLISECONDS.sleep(500);
 
                                             String openWindowsList = new CommandReader(new String[]{"/usr/bin/wmctrl", "-l"}).getOutputLinesAsString();
@@ -11724,6 +11965,8 @@ public class QAHelper extends javax.swing.JFrame {
                                                     break;
                                                 }
                                             }
+                                        } else {
+                                            playAlertSound("error");
                                         }
 
                                         publish("finishing"); // Must be here to always set loadingWindow to alwaysOnTop.
@@ -11957,6 +12200,8 @@ public class QAHelper extends javax.swing.JFrame {
                                             btnTestCameraActionPerformed(evt);
                                         } else if (!isCameraVerified && btnVerifyCamera.isVisible() && btnVerifyCamera.isEnabled()) {
                                             btnVerifyCameraActionPerformed(null);
+                                        } else if (!isPeripheralTestMode) {
+                                            focusNextTestTaskVerifyButton(btnTestCamera);
                                         }
                                     }
                                 } catch (HeadlessException | InterruptedException | ExecutionException finishCameraTestException) {
@@ -12183,6 +12428,8 @@ public class QAHelper extends javax.swing.JFrame {
                         } else {
                             btnVerifyKeyboardActionPerformed(null);
                         }
+                    } else if (!isPeripheralTestMode) {
+                        focusNextTestTaskVerifyButton(btnTestKeyboard);
                     }
 
                     setActionsEnabled(true, !isWindowsPE);
@@ -12243,6 +12490,8 @@ public class QAHelper extends javax.swing.JFrame {
 
             if (!isMouseVerified && btnVerifyMouse.isVisible() && btnVerifyMouse.isEnabled()) {
                 btnVerifyMouseActionPerformed(null);
+            } else if (!isPeripheralTestMode) {
+                focusNextTestTaskVerifyButton(btnTestMouse);
             }
 
             setActionsEnabled(true);
@@ -12302,7 +12551,7 @@ public class QAHelper extends javax.swing.JFrame {
                     + "<br/><br/>"
                     + "<b style='font-family: monospace'>&nbsp;7)</b> <u>Double-check the date and time</u> in UEFI/BIOS Setup and <b>confirm it is still correct.</b>"
                     + "<br/>"
-                    + "<b style='font-family: monospace'>&nbsp;&nbsp;&nbsp;</b> " + new TwemojiImage("ThumbsDown", qaHelperWindow).toImgTag("left") + " <i>If the date and time is no longer correct, the CMOS battery may need to be replaced.</i>"
+                    + "<b style='font-family: monospace'>&nbsp;&nbsp;&nbsp;</b> " + new TwemojiImage("ThumbsDown", qaHelperWindow).toImgTag("left") + " <i>If the date and time is no longer correct, the <u>CMOS battery</u> may need to be replaced.</i>"
                     + "<br/>"
                     + "<b style='font-family: monospace'>&nbsp;&nbsp;&nbsp;</b> " + new TwemojiImage("BackhandIndexPointingRight", qaHelperWindow).toImgTag("left") + " <i>IF THE DATE AND TIME IS NO LONGER CORRECT, INFORM AN INSTRUCTOR</i> " + new TwemojiImage("DoubleExclamationMark", qaHelperWindow).toImgTag("right")
                     + "<br/><br/>"
@@ -12314,7 +12563,9 @@ public class QAHelper extends javax.swing.JFrame {
                     + "<br/>"
                     + "<b style='font-family: monospace'>&nbsp;&nbsp;&nbsp;</b> <b>Optical Drive, Hard Drive/Solid State Drive, USB</b>"
                     + "<br/><br/>"
-                    + "<b style='font-family: monospace'>10)</b> Set <u>SATA Operation</u> to <b>AHCI.</b>"
+                    + "<b style='font-family: monospace'>10)</b> Set <u>SATA Operation</u> to <b>AHCI</b> (and not RAID)."
+                    + "<br/>"
+                    + "<b style='font-family: monospace'>&nbsp;&nbsp;&nbsp;</b> " + new TwemojiImage("BackhandIndexPointingRight", qaHelperWindow).toImgTag("left") + " <i>If you do not see a <u>SATA Operation</u> section, make sure any kind of <u>Advanced Setup</u> toggle is enabled.</i>"
                     + "<br/><br/>"
                     + "<b style='font-family: monospace'>11)</b> <u>DISABLE any and all SECURITY settings</u> related to the <i>following keywords:</i>"
                     + "<br/>"
@@ -12338,6 +12589,8 @@ public class QAHelper extends javax.swing.JFrame {
                 case "OK":
                     if (!isBIOSverified && btnVerifyBIOS.isVisible() && btnVerifyBIOS.isEnabled()) {
                         btnVerifyBIOSActionPerformed(null);
+                    } else if (!isPeripheralTestMode) {
+                        focusNextTestTaskVerifyButton(btnSetupBIOS);
                     }
 
                     setActionsEnabled(true);
@@ -12363,7 +12616,7 @@ public class QAHelper extends javax.swing.JFrame {
         if (actionsEnabled && isLoggedIn && (computerSpecs != null) && pid.startsWith("FG") && !isMacOS) {
             setActionsEnabled(false);
 
-            if (!shouldConfirm || JOptionPane.showConfirmDialog(qaHelperWindow, "<html><b>Are you sure you want to log ID \"" + pid + "\" as Absolute Persistence/Computrace enabled?</b><br/><br/><p style='font-family: monospace'><b>Serial:</b> " + computerSpecs.getSerial() + "<br/><b>&nbsp;&nbsp;UUID:</b> " + computerSpecs.getBiosUUID() + "</p></html>", "QA Helper  —  Confirm Log Absolute Persistence/Computrace Enabled", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, new TwemojiImage("ControlKnobs", qaHelperWindow).toImageIcon(32)) == JOptionPane.YES_OPTION) {
+            if (!shouldConfirm || JOptionPane.showConfirmDialog(qaHelperWindow, "<html><b>Are you sure you want to log ID \"" + pid + "\" as Absolute Persistence/Computrace enabled?</b><br/><br/><p style='font-family: monospace'><b>Serial:</b> " + computerSpecs.getSerial() + "<br/><b>&nbsp;&nbsp;UUID:</b> " + computerSpecs.getHardwareUUID() + "</p></html>", "QA Helper  —  Confirm Log Absolute Persistence/Computrace Enabled", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, new TwemojiImage("ControlKnobs", qaHelperWindow).toImageIcon(32)) == JOptionPane.YES_OPTION) {
                 loadingWindow.setDefaultCloseOperation(javax.swing.WindowConstants.DO_NOTHING_ON_CLOSE);
                 setDefaultCloseOperation(javax.swing.WindowConstants.DO_NOTHING_ON_CLOSE);
 
@@ -12372,7 +12625,7 @@ public class QAHelper extends javax.swing.JFrame {
                 LinkedHashMap<String, String> logAbsoluteEnabledParameters = new LinkedHashMap<>();
                 logAbsoluteEnabledParameters.put("id", pid);
                 logAbsoluteEnabledParameters.put("serial", computerSpecs.getSerial());
-                logAbsoluteEnabledParameters.put("uuid", computerSpecs.getBiosUUID());
+                logAbsoluteEnabledParameters.put("uuid", computerSpecs.getHardwareUUID());
                 logAbsoluteEnabledParameters.put("brand", computerSpecs.getFullBrand());
                 logAbsoluteEnabledParameters.put("model", computerSpecs.getFullModel());
 
@@ -12387,7 +12640,7 @@ public class QAHelper extends javax.swing.JFrame {
                             }
                         }
 
-                        return new WebReader(privateStrings.getLogAbsoluteEnabledURL(isTestMode), logAbsoluteEnabledParameters, 15).getFirstOutputLine();
+                        return new WebReader(privateStrings.getLogAbsoluteEnabledURL(isTestMode), logAbsoluteEnabledParameters, 20).getFirstOutputLine();
                     }
 
                     @Override
@@ -12406,7 +12659,7 @@ public class QAHelper extends javax.swing.JFrame {
                             }
 
                             if (logAbsoluteEnabledResult.endsWith("LOGGED")) {
-                                JOptionPane.showMessageDialog(qaHelperWindow, "<html><b>" + (logAbsoluteEnabledResult.startsWith("ALREADY") ? "Already" : "Successfully") + " Logged ID \"" + pid + "\" as Absolute Persistence/Computrace Enabled</u></b><br/><br/><p style='font-family: monospace'><b>Serial:</b> " + computerSpecs.getSerial() + "<br/><b>&nbsp;&nbsp;UUID:</b> " + computerSpecs.getBiosUUID() + "</p></html>", "QA Helper  —  " + (logAbsoluteEnabledResult.startsWith("ALREADY") ? "Already" : "Successfully") + " Logged Absolute Persistence/Computrace Enabled", JOptionPane.INFORMATION_MESSAGE, new TwemojiImage("ControlKnobs", qaHelperWindow).toImageIcon(32));
+                                JOptionPane.showMessageDialog(qaHelperWindow, "<html><b>" + (logAbsoluteEnabledResult.startsWith("ALREADY") ? "Already" : "Successfully") + " Logged ID \"" + pid + "\" as Absolute Persistence/Computrace Enabled</u></b><br/><br/><p style='font-family: monospace'><b>Serial:</b> " + computerSpecs.getSerial() + "<br/><b>&nbsp;&nbsp;UUID:</b> " + computerSpecs.getHardwareUUID() + "</p></html>", "QA Helper  —  " + (logAbsoluteEnabledResult.startsWith("ALREADY") ? "Already" : "Successfully") + " Logged Absolute Persistence/Computrace Enabled", JOptionPane.INFORMATION_MESSAGE, new TwemojiImage("ControlKnobs", qaHelperWindow).toImageIcon(32));
                             } else {
                                 if (logAbsoluteEnabledResult.isEmpty()) {
                                     logAbsoluteEnabledResult = "NO RESPONSE";
@@ -12504,6 +12757,8 @@ public class QAHelper extends javax.swing.JFrame {
 
             if (!isPortsVerified && btnVerifyPorts.isVisible() && btnVerifyPorts.isEnabled()) {
                 btnVerifyPortsActionPerformed(null);
+            } else if (!isPeripheralTestMode) {
+                focusNextTestTaskVerifyButton(btnCheckPorts);
             }
 
             setActionsEnabled(true);
@@ -12882,8 +13137,12 @@ public class QAHelper extends javax.swing.JFrame {
                             }
                         }
 
-                        if (!driverErrors && !isDriversVerified && btnVerifyDrivers.isVisible() && btnVerifyDrivers.isEnabled()) {
-                            btnVerifyDriversActionPerformed(null);
+                        if (!driverErrors) {
+                            if (!isDriversVerified && btnVerifyDrivers.isVisible() && btnVerifyDrivers.isEnabled()) {
+                                btnVerifyDriversActionPerformed(null);
+                            } else if (!isPeripheralTestMode) {
+                                focusNextTestTaskVerifyButton(btnCheckDrivers);
+                            }
                         }
                     } catch (HeadlessException | InterruptedException | ExecutionException checkWindowsDriversException) {
                         if (isTestMode) {
@@ -13080,10 +13339,10 @@ public class QAHelper extends javax.swing.JFrame {
                 playAlertSound("beep");
             }
 
-            if (!didLaunchSystemUpdates) {
-                focusNextTestTaskVerifyButton(btnSystemUpdates);
-            } else if (didLaunchSystemUpdates && !isUpdatesVerified && btnVerifySystemUpdates.isVisible() && btnVerifySystemUpdates.isEnabled()) {
+            if (!isUpdatesVerified && btnVerifySystemUpdates.isVisible() && btnVerifySystemUpdates.isEnabled()) {
                 btnVerifySystemUpdatesActionPerformed(null);
+            } else if (!isPeripheralTestMode) {
+                focusNextTestTaskVerifyButton(btnSystemUpdates);
             }
 
             setActionsEnabled(true);
@@ -13449,6 +13708,11 @@ public class QAHelper extends javax.swing.JFrame {
                                         }
 
                                         if (new File("\\Install\\DPK\\oa3tool.exe").exists()) {
+                                            String availableDPKcounts = new WebReader(privateStrings.getFreeGeekAPIurl("dpk-counts", isTestMode)).getOutputLinesAsString();
+                                            if (!availableDPKcounts.startsWith("Windows")) {
+                                                availableDPKcounts = "UNKNOWN (Please Inform Free Geek I.T.)";
+                                            }
+
                                             ArrayList<String> productKeyTypeDialogButtons = new ArrayList<>();
                                             if (!isWindowsHomeEdition) {
                                                 productKeyTypeDialogButtons.add("Retrieve and Apply Citizenship Refurbished DPK");
@@ -13456,7 +13720,7 @@ public class QAHelper extends javax.swing.JFrame {
                                             productKeyTypeDialogButtons.add("Retrieve and Apply Commercial Refurbished DPK");
                                             productKeyTypeDialogButtons.add("Cancel");
 
-                                            int productKeyTypeResponse = JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>Would you like to retrieve and apply a <u>Commercial</u>" + (!isWindowsHomeEdition ? " or <i>Citizenship</i>" : "") + " Refurbished Digital Product Key to license Windows?</b>" + (!isWindowsHomeEdition ? "<br/><br/>If you choose a <i>Citizenship</i> Refurbished DPK, this computer will ONLY be able to be distributed to ELIGIBLE organizations or individuals, and will NOT be able to be sold online.<br/><br/><u>Be sure to ONLY choose a <i>Citizenship</i> Refurbished DPK if specifically instructed to do so for this computer.</u>" : "") + "</html>", "QA Helper  —  " + (isWindowsHomeEdition ? "Confirm Refurbished DPK" : "Choose Refurbished DPK Type"), JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, new TwemojiImage("OldKey", qaHelperWindow).toImageIcon(32), productKeyTypeDialogButtons.toArray(), productKeyTypeDialogButtons.get(0));
+                                            int productKeyTypeResponse = JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>Would you like to retrieve and apply a <u>Commercial</u>" + (!isWindowsHomeEdition ? " or <i>Citizenship</i>" : "") + " Refurbished Digital Product Key to license Windows?</b><br/><br/><u>Available DPK Counts:</u><br/>" + escapeMultiLineStringForHTML(availableDPKcounts) + (!isWindowsHomeEdition ? "<br/><br/>If you choose a <i>Citizenship</i> Refurbished DPK, this computer will ONLY be able to be distributed to ELIGIBLE organizations or individuals, and will NOT be able to be SOLD.<br/><br/><u>Be sure to ONLY choose a <i>Citizenship</i> Refurbished DPK if specifically instructed to do so for this computer.</u>" : "") + "</html>", "QA Helper  —  " + (isWindowsHomeEdition ? "Confirm Refurbished DPK" : "Choose Refurbished DPK Type"), JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, new TwemojiImage("OldKey", qaHelperWindow).toImageIcon(32), productKeyTypeDialogButtons.toArray(), productKeyTypeDialogButtons.get(0));
 
                                             String productKeyTypeResponseString = "Cancel";
                                             if (productKeyTypeResponse > -1) {
@@ -13519,6 +13783,8 @@ public class QAHelper extends javax.swing.JFrame {
                                 } else {
                                     focusNextTestTaskVerifyButton(btnCheckWindowsLicense);
                                 }
+                            } else if (!isPeripheralTestMode) {
+                                focusNextTestTaskVerifyButton(btnCheckWindowsLicense);
                             }
                         }
                     } catch (HeadlessException | InterruptedException | ExecutionException checkWindowsLicenseException) {
@@ -13567,7 +13833,7 @@ public class QAHelper extends javax.swing.JFrame {
             return "";
         }
 
-        String mscServerAddress = "";
+        String mscServerAddress = "192.168.3.149"; // First, try what SHOULD be the local static IP.
 
         if (new File("\\Install\\DPK\\server-address.txt").exists()) {
             try {
@@ -13586,13 +13852,23 @@ public class QAHelper extends javax.swing.JFrame {
             return mscServerAddress;
         }
 
-        String mscServerAddressPrefix = "192.168.2.";
+        String mscServerAddressPrefix = "192.168.2."; // If local static IP was not found, hunt for the open ports.
         mscServerAddress = new CommandReader(new String[]{"\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
             "for ($ipSuffix = 1; $ipSuffix -le 254; $ipSuffix ++) { try { "
             + "if ((New-Object System.Net.Sockets.TcpClient).ConnectAsync(\\\"" + mscServerAddressPrefix + "$ipSuffix\\\", '" + mscPort + "').Wait(20) -and "
             + "(New-Object System.Net.Sockets.TcpClient).ConnectAsync(\\\"" + mscServerAddressPrefix + "$ipSuffix\\\", '" + sftpPort + "').Wait(20)) { "
             + "Write-Output \\\"" + mscServerAddressPrefix + "$ipSuffix\\\"; "
             + "break } } catch {} }"}).getFirstOutputLine();
+
+        if (mscServerAddress.isEmpty()) {
+            mscServerAddressPrefix = "192.168.3."; // If local static IP was not found, hunt for the open ports.
+            mscServerAddress = new CommandReader(new String[]{"\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+                "for ($ipSuffix = 1; $ipSuffix -le 254; $ipSuffix ++) { try { "
+                + "if ((New-Object System.Net.Sockets.TcpClient).ConnectAsync(\\\"" + mscServerAddressPrefix + "$ipSuffix\\\", '" + mscPort + "').Wait(20) -and "
+                + "(New-Object System.Net.Sockets.TcpClient).ConnectAsync(\\\"" + mscServerAddressPrefix + "$ipSuffix\\\", '" + sftpPort + "').Wait(20)) { "
+                + "Write-Output \\\"" + mscServerAddressPrefix + "$ipSuffix\\\"; "
+                + "break } } catch {} }"}).getFirstOutputLine();
+        }
 
         if (!mscServerAddress.isEmpty()) {
             try (BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter("\\Install\\DPK\\server-address.txt"))) {
@@ -13823,7 +14099,13 @@ public class QAHelper extends javax.swing.JFrame {
                                             }
 
                                             logSpecsAction(dpkTypeCode + " " + productKeyID + " Retrieved");
-                                            sendNoticeEmail(dpkTypeCode + " " + productKeyID + " Retrieved from MSC");
+
+                                            LinkedHashMap<String, String> decrementDPKcountsParameters = new LinkedHashMap<>();
+                                            decrementDPKcountsParameters.put("key", privateStrings.getDPKcountsPrivateKey());
+                                            decrementDPKcountsParameters.put("type", dpkTypeCode);
+                                            String decrementDPKcountsResult = new WebReader(privateStrings.getFreeGeekAPIurl("dpk-counts?decrement", isTestMode), decrementDPKcountsParameters).getOutputLinesAsString();
+
+                                            sendNoticeEmail(dpkTypeCode + " " + productKeyID + " Retrieved from MSC\n\nDecrement DPK Counts Result:\n" + decrementDPKcountsResult);
                                         }
 
                                         return "RETRIEVED " + dpkTypeCode + ": " + digitalProductKey;
@@ -13861,7 +14143,12 @@ public class QAHelper extends javax.swing.JFrame {
                         } else {
                             playAlertSound("error");
 
-                            sendErrorEmail(retrieveDPKoutput);
+                            String availableDPKcounts = new WebReader(privateStrings.getFreeGeekAPIurl("dpk-counts", isTestMode)).getOutputLinesAsString();
+                            if (!availableDPKcounts.startsWith("Windows")) {
+                                availableDPKcounts = "UNKNOWN (Please Inform Free Geek I.T.)";
+                            }
+
+                            sendErrorEmail(retrieveDPKoutput + "\n\nAvailable DPK Counts:\n" + availableDPKcounts);
 
                             if (retrieveDPKoutput.equals("NO SERIAL NUMBER")) {
                                 JOptionPane.showMessageDialog(qaHelperWindow, "<html><b>No Serial Number for Digital Product Key</b><br/><br/>Since this computer does not have a computer or motherboard serial number available via software,<br/><u>it cannot have a Digital Product Key applied to it.</u></html>", "QA Helper  —  No Serial Number for Digital Product Key", JOptionPane.ERROR_MESSAGE);
@@ -14540,7 +14827,7 @@ public class QAHelper extends javax.swing.JFrame {
 
                                                     if (pid.startsWith("FG")) {
                                                         for (;;) {
-                                                            String logRemoteManagedMacResult = new WebReader(privateStrings.getLogRemoteManagedMacURL(), logRemoteManagedMacParameters, 15).getFirstOutputLine();
+                                                            String logRemoteManagedMacResult = new WebReader(privateStrings.getLogRemoteManagedMacURL(), logRemoteManagedMacParameters, 20).getFirstOutputLine();
                                                             if (logRemoteManagedMacResult.endsWith("LOGGED")) {
                                                                 break;
                                                             }
@@ -14603,6 +14890,8 @@ public class QAHelper extends javax.swing.JFrame {
 
                                                     if (!isRemoteManagementVerified && btnVerifyRemoteManagement.isVisible() && btnVerifyRemoteManagement.isEnabled()) {
                                                         btnVerifyRemoteManagementActionPerformed(null);
+                                                    } else if (!isPeripheralTestMode) {
+                                                        focusNextTestTaskVerifyButton(btnCheckRemoteManagement);
                                                     }
                                                 }
                                             } else {
@@ -14841,19 +15130,20 @@ public class QAHelper extends javax.swing.JFrame {
                     + "      Brand: " + (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardBrand() : computerSpecs.getFullBrand()) + "\n"
                     + "      Model: " + (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardModel() : computerSpecs.getFullModel()) + "\n"
                     + "     Serial: " + (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardSerial() : computerSpecs.getFullSerial()) + "\n"
+                    + "       UUID: " + computerSpecs.getHardwareUUID() + "\n"
                     + ((isLinuxLiveBoot || isMacTestBoot || deviceTypeIsMotherboard) ? "" : "         OS: " + computerSpecs.getFullOS() + "\n")
                     + "\n"
-                    + "        CPU: " + computerSpecs.getFullCPU() + "\n"
-                    + "        RAM: " + (deviceTypeIsMotherboard ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()) + "\n"
+                    + "        CPU: " + ((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("CPU")) ? "N/A" : computerSpecs.getFullCPU()) + "\n"
+                    + "        RAM: " + ((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("RAM")) ? computerSpecs.getFullMotherboardRAM() : computerSpecs.getFullRAM()) + "\n"
                     + (deviceTypeHasScreen
                             ? ("     Screen: " + (screenErrorArray.isEmpty() ? "" : "• ") + computerSpecs.getFullScreenSize()
                             + (screenErrorArray.isEmpty() ? "" : ("\n             • " + String.join("\n             • ", screenErrorArray))) + "\n") : "")
-                    + (deviceTypeIsMotherboard
-                            ? ""
-                            : "        GPU: " + (((gpuArray.size() > 1) || !gpuErrorArray.isEmpty())
-                            ? ("• " + (gpuArray.isEmpty() ? "N/A" : String.join("\n             • ", gpuArray)))
-                            : computerSpecs.getFullGPU())
-                            + (gpuErrorArray.isEmpty() ? "" : ("\n             • " + String.join("\n             • ", gpuErrorArray))) + "\n")
+                    + ((deviceTypeIsMotherboard && !motherboardIncludedComponents.contains("GPU"))
+                    ? ""
+                    : "        GPU: " + (((gpuArray.size() > 1) || !gpuErrorArray.isEmpty())
+                    ? ("• " + (gpuArray.isEmpty() ? "N/A" : String.join("\n             • ", gpuArray)))
+                    : computerSpecs.getFullGPU())
+                    + (gpuErrorArray.isEmpty() ? "" : ("\n             • " + String.join("\n             • ", gpuErrorArray))) + "\n")
                     + "      Audio: " + (((audioArray.size() > 1) || !audioErrorArray.isEmpty())
                     ? ("• " + (audioArray.isEmpty() ? "N/A" : String.join("\n             • ", audioArray)))
                     : computerSpecs.getFullAudio())
@@ -15177,11 +15467,11 @@ public class QAHelper extends javax.swing.JFrame {
             setActionsEnabled(false);
 
             if (!isLoggedIn) {
-                if (btnDoneTesting.getText().equals("Options") && !isWindows) {
+                if (btnDoneTesting.getText().equals("Done") && !isWindows) {
                     String[] statusNames = privateStrings.getPCsCRMStatusNames();
-                    // hideLoginAndTasks is never set to true on Windows, so this will never actually be an option on Windows.
+                    // hideLoginAndVerifications is never set to true on Windows, so this will never actually be an option on Windows.
                     ArrayList<String> optionsDialogButtons = new ArrayList<>();
-                    optionsDialogButtons.addAll(Arrays.asList(((isLinuxUbiquityMode || isWindowsPE) ? "Install OS" : "Quit"), "Show Login & Tasks"));
+                    optionsDialogButtons.addAll(Arrays.asList(((isLinuxUbiquityMode || isWindowsPE) ? "Install OS" : "Quit"), "Show Login"));
                     if (isMacOS) {
                         if (new File("/Users/fg-demo/Applications/Cleanup After " + statusNames[12] + ".app").exists()) {
                             optionsDialogButtons.add("Cleanup After " + statusNames[12]);
@@ -15192,7 +15482,7 @@ public class QAHelper extends javax.swing.JFrame {
 
                     boolean showRunOemConfigPrepareCheckbox = (isLinux && !isLinuxLiveBoot && new CommandReader(new String[]{"/usr/bin/id", "-un"}).getFirstOutputLine().equals("oem"));
 
-                    optionsDialogButtons.addAll(Arrays.asList("Set Price", "Mark as Sold" + (showRunOemConfigPrepareCheckbox ? " & Prepare for Shipping to End User" : ""), "Nothing"));
+                    optionsDialogButtons.addAll(Arrays.asList("Mark as Distributed" + (showRunOemConfigPrepareCheckbox ? " & Prepare for Shipping to End User" : ""), "Set Price", "Nothing"));
 
                     int optionsDialogResponse = JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>What would you like to do?</b></html>", "QA Helper  —  Options", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, optionsDialogButtons.toArray(), optionsDialogButtons.get(0));
                     String optionsDialogResponseString = "Nothing";
@@ -15210,7 +15500,7 @@ public class QAHelper extends javax.swing.JFrame {
                         }
                         System.exit(0);
                     } else if (!optionsDialogResponseString.equals("Nothing")) {
-                        // If Windows support for hideLoginAndTasks is ever added, this will need to be dealt with
+                        // If Windows support for hideLoginAndVerifications is ever added, this will need to be dealt with
                         String possibleAdminUsername = new CommandReader(new String[]{"/usr/bin/id", "-un"}).getFirstOutputLine();
                         if (isMacOS) {
                             List<String> adminUsernames = Arrays.asList(new CommandReader(new String[]{"/bin/bash", "-c", "/usr/libexec/PlistBuddy -c 'Print :dsAttrTypeStandard\\:GroupMembership' /dev/stdin <<< \"$(/usr/bin/dscl -plist . -read /Groups/admin GroupMembership)\" | /usr/bin/awk '(($NF != \"{\") && ($NF != \"root\") && ($NF != \"}\")) { print $NF }'"}).getOutputLines());
@@ -15220,6 +15510,13 @@ public class QAHelper extends javax.swing.JFrame {
                         }
                         final String shortAdminUsernameForTask = possibleAdminUsername;
                         final String fullAdminUsernameForTask = (isMacOS ? new CommandReader(new String[]{"/usr/bin/id", "-F", shortAdminUsernameForTask}).getFirstOutputLine() : (isLinux ? new CommandReader(new String[]{"/usr/bin/getent", "passwd", shortAdminUsernameForTask}).getFirstOutputLine().split(":")[4].replace(",", "") : shortAdminUsernameForTask));
+
+                        boolean promptForPassword = true;
+                        String insecureFreeGeekPassword = privateStrings.getInsecureFreeGeekPassword();
+                        if ((isLinux && new CommandReader("printf '%s\\n' '" + insecureFreeGeekPassword.replace("'", "'\\''") + "' | /usr/bin/sudo -Sk echo '<CORRECT>'").getFirstOutputLine().equals("<CORRECT>"))
+                                || (!isLinux && new CommandReader("/usr/bin/dscl . -authonly '" + shortAdminUsernameForTask.replace("'", "'\\''") + "' '" + insecureFreeGeekPassword.replace("'", "'\\''") + "' && echo '<CORRECT>'").getFirstOutputLine().equals("<CORRECT>"))) {
+                            promptForPassword = false;
+                        }
 
                         JPasswordField passwordField = new JPasswordField();
                         passwordField.putClientProperty("JTextField.showClearButton", true);
@@ -15236,19 +15533,21 @@ public class QAHelper extends javax.swing.JFrame {
                             }
                         };
 
-                        passwordPromptPane.createDialog(qaHelperWindow, "QA Helper  —  Admin Password").setVisible(true);
+                        if (promptForPassword) {
+                            passwordPromptPane.createDialog(qaHelperWindow, "QA Helper  —  Admin Password").setVisible(true);
+                        }
 
-                        if (passwordPromptPane.getValue() != null && (int) passwordPromptPane.getValue() == JOptionPane.OK_OPTION) {
-                            String adminPasswordForTask = new String(passwordField.getPassword());
+                        if (!promptForPassword || (passwordPromptPane.getValue() != null && (int) passwordPromptPane.getValue() == JOptionPane.OK_OPTION)) {
+                            String adminPasswordForTask = (promptForPassword ? new String(passwordField.getPassword()) : insecureFreeGeekPassword);
 
                             if ((isLinux && new CommandReader("printf '%s\\n' '" + adminPasswordForTask.replace("'", "'\\''") + "' | /usr/bin/sudo -Sk echo '<CORRECT>'").getFirstOutputLine().equals("<CORRECT>"))
                                     || (!isLinux && new CommandReader("/usr/bin/dscl . -authonly '" + shortAdminUsernameForTask.replace("'", "'\\''") + "' '" + adminPasswordForTask.replace("'", "'\\''") + "' && echo '<CORRECT>'").getFirstOutputLine().equals("<CORRECT>"))) {
                                 switch (optionsDialogResponseString) {
-                                    case "Show Login & Tasks":
-                                        hideLoginAndTasks = false;
+                                    case "Show Login":
+                                        hideLoginAndVerifications = false;
                                         displayComputerSpecs();
                                         focusNextTestTaskVerifyButton(null);
-                                        hideLoginAndTasks = true;
+                                        hideLoginAndVerifications = true;
                                         break;
                                     case "Set Price":
                                         NumberFormatter priceFormatter = new NumberFormatter(NumberFormat.getNumberInstance());
@@ -15281,23 +15580,23 @@ public class QAHelper extends javax.swing.JFrame {
                                                 && JOptionPane.showConfirmDialog(qaHelperWindow, "<html><b>Are you sure you want to set the price to <u>" + newPrice + "</u>?</b></html>", "QA Helper  —  Confirm Price", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, new TwemojiImage("DollarBanknote", qaHelperWindow).toImageIcon(32)) == JOptionPane.YES_OPTION) {
                                             writeToHelperLogFile("Price: " + newPrice);
 
-                                            isSold = false;
+                                            isDistributed = false;
                                             displayPrice = newPrice;
 
                                             displayComputerSpecs(); // Update displayed price
                                         }
                                         break;
-                                    case "Mark as Sold":
-                                    case "Mark as Sold & Prepare for Shipping to End User":
-                                        String markAsSoldConfirmationMessage = "<html><b>Are you sure you want to mark this computer as sold?</b></html>";
+                                    case "Mark as Distributed":
+                                    case "Mark as Distributed & Prepare for Shipping to End User":
+                                        String markAsDistributedConfirmationMessage = "<html><b>Are you sure you want to mark this computer as distributed?</b></html>";
                                         JCheckBox runOemConfigPrepareCheckbox = new JCheckBox("Prepare for Shipping to End User (Run \"oem-config-prepare\")");
                                         runOemConfigPrepareCheckbox.setSelected(true);
-                                        Object[] markAsSoldConfirmationMessageAndOptions = new Object[]{markAsSoldConfirmationMessage, (showRunOemConfigPrepareCheckbox ? " " : ""), (showRunOemConfigPrepareCheckbox ? runOemConfigPrepareCheckbox : "")};
-                                        if (JOptionPane.showConfirmDialog(qaHelperWindow, markAsSoldConfirmationMessageAndOptions, "QA Helper  —  Confirm Mark as Sold", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, new TwemojiImage("Receipt", qaHelperWindow).toImageIcon(32)) == JOptionPane.YES_OPTION) {
+                                        Object[] markAsDistributedConfirmationMessageAndOptions = new Object[]{markAsDistributedConfirmationMessage, (showRunOemConfigPrepareCheckbox ? " " : ""), (showRunOemConfigPrepareCheckbox ? runOemConfigPrepareCheckbox : "")};
+                                        if (JOptionPane.showConfirmDialog(qaHelperWindow, markAsDistributedConfirmationMessageAndOptions, "QA Helper  —  Confirm Mark as Distributed", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, new TwemojiImage("Receipt", qaHelperWindow).toImageIcon(32)) == JOptionPane.YES_OPTION) {
                                             if (isMacOS && new File("/Users/fg-demo/Applications/Free Geek Reset.app").exists()) {
-                                                writeToHelperLogFile("Sold");
-                                                isSold = true;
-                                                displayComputerSpecs(); // Update sold display
+                                                writeToHelperLogFile("Distributed");
+                                                isDistributed = true;
+                                                displayComputerSpecs(); // Update distributed display
 
                                                 try {
                                                     Runtime.getRuntime().exec(new String[]{"/usr/bin/open", "-na", "/Users/fg-demo/Applications/" + (new File("/Users/fg-demo/Applications/Cleanup After " + statusNames[12] + ".app").exists() ? "Cleanup After " + statusNames[12] : "Free Geek Reset") + ".app"});
@@ -15313,27 +15612,27 @@ public class QAHelper extends javax.swing.JFrame {
                                                 }
 
                                                 if (oemConfigSucceeded) {
-                                                    writeToHelperLogFile("Sold");
-                                                    isSold = true;
-                                                    displayComputerSpecs(); // Update sold display
+                                                    writeToHelperLogFile("Distributed");
+                                                    isDistributed = true;
+                                                    displayComputerSpecs(); // Update distributed display
 
-                                                    new LinuxAutoScripts("Sold", adminPassword);
+                                                    new LinuxAutoScripts("Distributed", adminPassword);
 
-                                                    ArrayList<String> markedAsSoldDialogButtons = new ArrayList<>();
+                                                    ArrayList<String> markedAsDistributedDialogButtons = new ArrayList<>();
 
                                                     if (!isLinuxUbiquityMode && !isWindowsPE) {
-                                                        markedAsSoldDialogButtons.add("Quit");
+                                                        markedAsDistributedDialogButtons.add("Quit");
                                                     }
-                                                    markedAsSoldDialogButtons.addAll(Arrays.asList("Shut Down", "Reboot", "Keep Using QA Helper"));
+                                                    markedAsDistributedDialogButtons.addAll(Arrays.asList("Shut Down", "Reboot", "Keep Using QA Helper"));
 
-                                                    int markedAsSoldDialogResponse = JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>Successfully Marked ID \"" + pid + "\" as Sold" + ((showRunOemConfigPrepareCheckbox && runOemConfigPrepareCheckbox.isSelected()) ? " & Prepared for Shipping to End User" : "") + "</b><br/><br/><i>What would you like to do next?</i></html>", "QA Helper  —  Marked as Sold", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, markedAsSoldDialogButtons.toArray(), markedAsSoldDialogButtons.get(0));
+                                                    int markedAsDistributedDialogResponse = JOptionPane.showOptionDialog(qaHelperWindow, "<html><b>Successfully Marked ID \"" + pid + "\" as Distributed" + ((showRunOemConfigPrepareCheckbox && runOemConfigPrepareCheckbox.isSelected()) ? " & Prepared for Shipping to End User" : "") + "</b><br/><br/><i>What would you like to do next?</i></html>", "QA Helper  —  Marked as Distributed", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null, markedAsDistributedDialogButtons.toArray(), markedAsDistributedDialogButtons.get(0));
 
-                                                    String markedAsSoldResponseString = "Keep Using QA Helper";
-                                                    if (markedAsSoldDialogResponse > -1) {
-                                                        markedAsSoldResponseString = markedAsSoldDialogButtons.get(markedAsSoldDialogResponse);
+                                                    String markedAsDistributedResponseString = "Keep Using QA Helper";
+                                                    if (markedAsDistributedDialogResponse > -1) {
+                                                        markedAsDistributedResponseString = markedAsDistributedDialogButtons.get(markedAsDistributedDialogResponse);
                                                     }
 
-                                                    switch (markedAsSoldResponseString) {
+                                                    switch (markedAsDistributedResponseString) {
                                                         case "Shut Down":
                                                             if (isLinux) {
                                                                 try {
@@ -15739,9 +16038,10 @@ public class QAHelper extends javax.swing.JFrame {
                                                                 deletedCorruptAptCacheFiles.add(corruptedFilePath);
                                                             }
                                                         }
-                                                    } else if (!ignoreAptCacheError && (pid.startsWith("D") || pid.startsWith("WA") || !pid.contains("-")) && thisAptOutputLine.startsWith("E: Failed to fetch ") && thisAptOutputLine.endsWith(" Clearsigned file isn't valid, got 'NOSPLIT' (does the network require authentication?)")) {
+                                                    } else if (!ignoreAptCacheError && (pid.startsWith("D") || pid.startsWith("WA") || pid.startsWith("PA") || !pid.contains("-")) && thisAptOutputLine.startsWith("E: Failed to fetch ") && thisAptOutputLine.endsWith(" Clearsigned file isn't valid, got 'NOSPLIT' (does the network require authentication?)")) {
                                                         // Don't know what is going on with their network, but this error always happens at a PCs for People location in Denver (IDs starting with "D"), so just ignore it and allow "statusNames[12]" anyway.
                                                         // This is also happening at the PCs for People location in Seattle (IDs starting with "WA", and previously all-numeric PIDs).
+                                                        // This is also started happening at the PCs for People IDs starting with "PA" on 6/3/26. (Location shows as Baltimore, but maybe new Pennsylvania location?)
                                                         ignoreAptCacheError = true;
                                                     }
                                                 }
@@ -16072,6 +16372,10 @@ public class QAHelper extends javax.swing.JFrame {
 
                                                             successfullyUpdatedStatusDialogButtons.add(((isLinuxUbiquityMode || isWindowsPE) ? "Install OS" : "Quit"));
 
+                                                            if (pid.startsWith("FG") && (computerSpecs.getFullBrand().equals("N/A") || computerSpecs.getFullModel().equals("N/A"))) {
+                                                                successfullyUpdatedStatusDialogButtons.add("Open FG Specs to Fill Brand/Model");
+                                                            }
+
                                                             if (!isWindows && loggedInUserInfo.containsKey("printerIPs")) {
                                                                 successfullyUpdatedStatusDialogButtons.add("Print Specs");
                                                             }
@@ -16100,6 +16404,104 @@ public class QAHelper extends javax.swing.JFrame {
 
                                                                     System.exit(0);
                                                                     break;
+                                                                } else if (successfullyUpdatedStatusDialogResponseString.contains("FG Specs")) {
+                                                                    String fgSpecsURL = privateStrings.getFreeGeekSpecsURL(pid, isTestMode);
+
+                                                                    try {
+                                                                        String loginPassword = new String(pswPassword.getPassword()); // DO NOT need to convert "intern" password since FG Specs will handle that.
+
+                                                                        File fgSpecsTempFile = File.createTempFile("qa_helper-fg_specs", ".html");
+                                                                        fgSpecsTempFile.deleteOnExit();
+
+                                                                        try (BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(fgSpecsTempFile))) {
+                                                                            bufferedWriter.write("<!DOCTYPE html>"
+                                                                                    + "<html>"
+                                                                                    + "<head><title>FG Specs</title></head>"
+                                                                                    + "<body onload=\"javascript:document.getElementById('fgSpecsLogin').submit();\">"
+                                                                                    + "<form id=\"fgSpecsLogin\" method=\"post\" action=\"" + fgSpecsURL + "\">"
+                                                                                    + "<input name=\"username\" type=\"hidden\" value=\"" + username + "\" />"
+                                                                                    + "<input name=\"password\" type=\"hidden\" value=\"" + loginPassword + "\" />"
+                                                                                    + "<input name=\"edit\" type=\"hidden\" value=\"Edit Specs\" />"
+                                                                                    + "</form>"
+                                                                                    + "</body>"
+                                                                                    + "</html>");
+                                                                        } catch (Exception writeFGSpecsTempFileException) {
+                                                                            if (isTestMode) {
+                                                                                System.out.println("writeFGSpecsTempFileException: " + writeFGSpecsTempFileException);
+                                                                            }
+                                                                        }
+
+                                                                        fgSpecsURL = fgSpecsTempFile.toURI().toString();
+                                                                    } catch (IOException createFGSpecsTempFileException) {
+                                                                        if (isTestMode) {
+                                                                            System.out.println("createFGSpecsTempFileException: " + createFGSpecsTempFileException);
+                                                                        }
+                                                                    }
+
+                                                                    if (isLinux) {
+                                                                        boolean enoughRAMforWebBrowser = true;
+
+                                                                        if (isLinuxBootedToRAM) {
+                                                                            // There may not be enough free RAM for browser when booted "toram"
+                                                                            try {
+                                                                                enoughRAMforWebBrowser = (2000000000 <= Long.parseLong(new CommandReader("/usr/bin/free -b | /usr/bin/awk '($1 == \"Mem:\") { print $4; exit }'").getFirstOutputLine()));
+                                                                            } catch (NumberFormatException getFreeMemoryException) {
+                                                                                if (isTestMode) {
+                                                                                    System.out.println("getFreeMemoryException: " + getFreeMemoryException);
+                                                                                }
+                                                                            }
+                                                                        }
+
+                                                                        if (enoughRAMforWebBrowser) {
+                                                                            boolean didLaunchChrome = false;
+                                                                            if (new File("/usr/bin/google-chrome-stable").exists() && !isLinuxUbiquityMode) { // Do not try to launch Chrome and only use Firefox when in Ubiquity mode (even if it has been pre-installed) since Firefox is simpler to launch without the app showing prompts.
+                                                                                try {
+                                                                                    Runtime.getRuntime().exec(new String[]{"/usr/bin/google-chrome-stable", "--password-store=basic", "--start-maximized", fgSpecsURL});
+                                                                                    didLaunchChrome = true;
+                                                                                } catch (IOException chromeException) {
+                                                                                    if (isTestMode) {
+                                                                                        System.out.println("chromeException: " + chromeException);
+                                                                                    }
+                                                                                }
+                                                                            }
+
+                                                                            if (!didLaunchChrome) {
+                                                                                try {
+                                                                                    if (isLinuxUbiquityMode) { // Sometimes Firefox hangs/freezes in Linux pre-install enviroment, so quit all Firefox instances before launching a new one.
+                                                                                        Runtime.getRuntime().exec(new String[]{"/usr/bin/pkill", "firefox"});
+                                                                                    }
+
+                                                                                    // Run Firefox as sudo in pre-install environment to fix an issue launching Firefox when java is not launched as sudo.
+                                                                                    Runtime.getRuntime().exec(new String[]{"/bin/sh", "-c", (isLinuxUbiquityMode ? "printf '%s\\n' " + adminPasswordQuotedForShell + " | /usr/bin/sudo -Sk " : "") + "/usr/bin/firefox " + fgSpecsURL});
+                                                                                } catch (IOException firefoxException) {
+                                                                                    if (isTestMode) {
+                                                                                        System.out.println("firefoxException: " + firefoxException);
+                                                                                    }
+
+                                                                                    try {
+                                                                                        Runtime.getRuntime().exec(new String[]{"/usr/bin/xdg-open", fgSpecsURL});
+                                                                                    } catch (IOException xdgOpenException) {
+                                                                                        if (isTestMode) {
+                                                                                            System.out.println("xdgOpenException: " + xdgOpenException);
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        } else {
+                                                                            playAlertSound("beep");
+                                                                            JOptionPane.showMessageDialog(qaHelperWindow, "<html><b>Not Enough Free RAM to Open Web Browser</b><br/><br/><i>Instead, you continue on FG Specs on another computer.</i></html>", "QA Helper  —  Cannot Open Web Browser", JOptionPane.WARNING_MESSAGE);
+                                                                        }
+                                                                    } else {
+                                                                        try {
+                                                                            Desktop.getDesktop().browse(new URI(fgSpecsURL));
+                                                                        } catch (IOException | URISyntaxException openFGSpecsException) {
+                                                                            if (isTestMode) {
+                                                                                System.out.println("openFGSpecsException: " + openFGSpecsException);
+                                                                            }
+                                                                        }
+                                                                    }
+
+                                                                    // NOTE: Stay in loop to prompt again.
                                                                 } else if (successfullyUpdatedStatusDialogResponseString.equals("Print Specs")) {
                                                                     btnSaveOrPrintSpecsActionPerformed(null); // NOTE: Stay in loop to prompt again.
                                                                 } else if (successfullyUpdatedStatusDialogResponseString.equals("Install OS") || successfullyUpdatedStatusDialogResponseString.equals("Quit")) {
@@ -16579,6 +16981,7 @@ public class QAHelper extends javax.swing.JFrame {
                             Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(thisSpecValue), null);
                             specSearchURL = "https://" + (isTestMode ? "test." : "") + "pcscrm.com/contact/pidsearch";
 
+                            /* NOTE: At some point around April 2026, pcscrm.com includes the header "set-cookie: ASP.NET_SessionId=###; path=/; secure; HttpOnly; SameSite=Lax" which breaks being able to post from a local HTML page to auto-login.
                             if (isLoggedIn) {
                                 String hiddenPCsCRMloginInputs = "";
 
@@ -16627,6 +17030,7 @@ public class QAHelper extends javax.swing.JFrame {
                                     }
                                 }
                             }
+                             */
                         }
                     }
 
@@ -17013,6 +17417,7 @@ public class QAHelper extends javax.swing.JFrame {
             manualDeviceType = "Laptop";
             manuallySetDeviceType = true;
             forceShowAllTests = false;
+            motherboardIncludedComponents.clear();
 
             writeToHelperLogFile("Manual Device Type: " + manualDeviceType);
 
@@ -17028,6 +17433,7 @@ public class QAHelper extends javax.swing.JFrame {
             manualDeviceType = "Desktop";
             manuallySetDeviceType = true;
             forceShowAllTests = false;
+            motherboardIncludedComponents.clear();
 
             writeToHelperLogFile("Manual Device Type: " + manualDeviceType);
 
@@ -17043,6 +17449,7 @@ public class QAHelper extends javax.swing.JFrame {
             manualDeviceType = "All-in-One";
             manuallySetDeviceType = true;
             forceShowAllTests = false;
+            motherboardIncludedComponents.clear();
 
             writeToHelperLogFile("Manual Device Type: " + manualDeviceType);
 
@@ -17054,14 +17461,48 @@ public class QAHelper extends javax.swing.JFrame {
     }//GEN-LAST:event_menDeviceTypeAllInOneActionPerformed
 
     private void menDeviceTypeMotherboardActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menDeviceTypeMotherboardActionPerformed
-        if ((actionsEnabled || (evt == null)) && !manualDeviceType.equals("Motherboard")) {
-            manualDeviceType = "Motherboard";
-            manuallySetDeviceType = true;
-            forceShowAllTests = false;
+        if (actionsEnabled || (evt == null)) { // Allow re-selecting to change component selection.
+            JCheckBox cpuIncludedCheckbox = new JCheckBox("CPU");
+            JCheckBox ramIncludedCheckbox = new JCheckBox("RAM");
+            //JCheckBox gpuIncludedCheckbox = new JCheckBox("GPU"); // NOTE: Never currently including GPUs in Motherboard combo sales.
 
-            writeToHelperLogFile("Manual Device Type: " + manualDeviceType);
+            if (motherboardIncludedComponents.contains("CPU")) {
+                cpuIncludedCheckbox.setSelected(true);
+            }
 
-            displayComputerSpecs();
+            if (motherboardIncludedComponents.contains("RAM")) {
+                ramIncludedCheckbox.setSelected(true);
+            }
+
+            /*if (motherboardIncludedComponents.contains("GPU")) {
+                gpuIncludedCheckbox.setSelected(true);
+            }*/
+            Object[] qaDoneConfirmationMessageAndOptions = new Object[]{"<html><b>What components will be included for sale with this motherboard?</b></html>", " ", cpuIncludedCheckbox, ramIncludedCheckbox/*, gpuIncludedCheckbox*/};
+
+            if (JOptionPane.showConfirmDialog(qaHelperWindow, qaDoneConfirmationMessageAndOptions, "QA Helper  —  Motherboard Components", JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, new TwemojiImage("PuzzlePiece", qaHelperWindow).toImageIcon(32)) == JOptionPane.OK_OPTION) {
+                manualDeviceType = "Motherboard";
+                manuallySetDeviceType = true;
+                forceShowAllTests = false;
+
+                motherboardIncludedComponents.clear();
+
+                if (cpuIncludedCheckbox.isSelected()) {
+                    motherboardIncludedComponents.add("CPU");
+                }
+
+                if (ramIncludedCheckbox.isSelected()) {
+                    motherboardIncludedComponents.add("RAM");
+                }
+
+                /*if (gpuIncludedCheckbox.isSelected()) {
+                    motherboardIncludedComponents.add("GPU");
+                }*/
+                writeToHelperLogFile("Manual Device Type: " + manualDeviceType + (motherboardIncludedComponents.isEmpty() ? "" : " (Including " + String.join(", ", motherboardIncludedComponents) + ")"));
+
+                displayComputerSpecs();
+            } else {
+                menDeviceTypeMotherboard.setSelected(manualDeviceType.equals("Motherboard"));
+            }
         } else {
             menDeviceTypeMotherboard.setSelected(manualDeviceType.equals("Motherboard"));
             playAlertSound("beep");

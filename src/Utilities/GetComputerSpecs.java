@@ -76,7 +76,7 @@ public final class GetComputerSpecs {
     private String fullSerial = "N/A";
     private String motherboardSerial = "N/A";
     private String fullMotherboardSerial = "N/A";
-    private String biosUUID = "N/A";
+    private String hardwareUUID = "N/A";
     private String cpu = "N/A";
     private String fullCPU = "N/A";
     private int cpuThreadCount = 0;
@@ -255,7 +255,7 @@ public final class GetComputerSpecs {
             fullSerial = "N/A";
             motherboardSerial = "N/A";
             fullMotherboardSerial = "N/A";
-            biosUUID = "N/A";
+            hardwareUUID = "N/A";
             cpu = "N/A";
             fullCPU = "N/A";
             cpuThreadCount = 0;
@@ -395,6 +395,8 @@ public final class GetComputerSpecs {
                     os += " Sequoia";
                 } else if (os.startsWith("macOS 16") || os.startsWith("macOS 26")) {
                     os += " Tahoe";
+                } else if (os.startsWith("macOS 27")) {
+                    os += " Golden Gate";
                 }
             }
 
@@ -412,7 +414,7 @@ public final class GetComputerSpecs {
             String cpuCores = "";
             String cpuThreads = "";
             String cpuBrand = "";
-            String cpuPandEcoresString = "";
+            String cpuCoresSpeedsString = "";
 
             long ramTotalBytesFromBanks = 0L;
             String maxRAM = "";
@@ -601,7 +603,7 @@ public final class GetComputerSpecs {
                                         } else if (thisDmidecodeLine.startsWith("\tSerial Number:")) {
                                             serial = thisDmidecodeProperty;
                                         } else if (thisDmidecodeLine.startsWith("\tUUID:")) {
-                                            biosUUID = thisDmidecodeProperty.toUpperCase();
+                                            hardwareUUID = thisDmidecodeProperty.toUpperCase();
                                         } else if (thisDmidecodeLine.startsWith("\tSKU Number:") && thisDmidecodeProperty.replaceAll("[^A-Za-z0-9]", "").length() > 1) {
                                             systemProductSKU = thisDmidecodeProperty;
                                         }
@@ -864,22 +866,38 @@ public final class GetComputerSpecs {
                         if (thisCpuCoreLineParts.length == 5) {
                             String thisSocketID = thisCpuCoreLineParts[0];
                             if (thisSocketID.equals("0")) { // Only ever examine SOCKET #0 because if there are multiple CPUs they should match and the P+E core counts should be the same.
-                                String thisCoreMaxMHzString = thisCpuCoreLineParts[3];
-                                if (thisCoreMaxMHzString.isEmpty()) {
-                                    thisCoreMaxMHzString = "0";
+                                String thisCoreMaxString = thisCpuCoreLineParts[3];
+                                if (thisCoreMaxString.isEmpty()) {
+                                    thisCoreMaxString = "0";
+                                } else {
+                                    try {
+                                        thisCoreMaxString = new DecimalFormat("#.#").format((Double.parseDouble(thisCoreMaxString) / 1000));
+
+                                        double thisCoreMaxDouble = Double.parseDouble(thisCoreMaxString);
+                                        String thisCoreMaxStringRoundUp = new DecimalFormat("#.#").format(thisCoreMaxDouble + 0.1);
+                                        String thisCoreMaxStringRoundDown = new DecimalFormat("#.#").format(thisCoreMaxDouble - 0.1);
+
+                                        if (cpuCoresInfo.containsKey(thisCoreMaxStringRoundUp)) {
+                                            thisCoreMaxString = thisCoreMaxStringRoundUp;
+                                        } else if (cpuCoresInfo.containsKey(thisCoreMaxStringRoundDown)) {
+                                            thisCoreMaxString = thisCoreMaxStringRoundDown;
+                                        }
+                                    } catch (NumberFormatException roundThisCoreMaxStringException) {
+
+                                    }
                                 }
 
-                                if (!cpuCoresInfo.containsKey(thisCoreMaxMHzString)) {
-                                    cpuCoresInfo.put(thisCoreMaxMHzString, new HashMap<>());
+                                if (!cpuCoresInfo.containsKey(thisCoreMaxString)) {
+                                    cpuCoresInfo.put(thisCoreMaxString, new HashMap<>());
                                 }
 
                                 String thisCoreID = thisCpuCoreLineParts[4];
 
-                                if (!cpuCoresInfo.get(thisCoreMaxMHzString).containsKey(thisCoreID)) {
-                                    cpuCoresInfo.get(thisCoreMaxMHzString).put(thisCoreID, new ArrayList<>());
+                                if (!cpuCoresInfo.get(thisCoreMaxString).containsKey(thisCoreID)) {
+                                    cpuCoresInfo.get(thisCoreMaxString).put(thisCoreID, new ArrayList<>());
                                 }
 
-                                cpuCoresInfo.get(thisCoreMaxMHzString).get(thisCoreID).add(thisCpuCoreLineParts[1]);
+                                cpuCoresInfo.get(thisCoreMaxString).get(thisCoreID).add(thisCpuCoreLineParts[1]);
 
                                 String thisCoreCurrentMHzString = thisCpuCoreLineParts[2];
                                 if (thisCoreCurrentMHzString.isEmpty()) {
@@ -896,7 +914,7 @@ public final class GetComputerSpecs {
                     }
 
                     ArrayList<String> cpuCoreMaxSpeedStrings = new ArrayList<>(cpuCoresInfo.keySet());
-                    cpuPandEcoresString = "";
+                    cpuCoresSpeedsString = "";
                     if (cpuCoreMaxSpeedStrings.size() > 1) {
                         Collections.sort(cpuCoreMaxSpeedStrings, (String thisCoreMaxSpeed, String thatCoreMaxSpeed) -> {
                             try {
@@ -910,25 +928,25 @@ public final class GetComputerSpecs {
                             }
                         });
 
+                        boolean detectedPerformanceCores = false;
+                        boolean detectedEfficientCores = false;
                         for (String thisMaxSpeedString : cpuCoreMaxSpeedStrings) {
                             HashMap<String, ArrayList<String>> thisMaxSpeedCores = cpuCoresInfo.get(thisMaxSpeedString);
                             int thisMaxSpeedCoreCount = thisMaxSpeedCores.keySet().size();
-                            if (cpuPandEcoresString.isEmpty()) { // P cores will always be first in the sorted "cpuCoreMaxSpeeds" list.
-                                cpuPandEcoresString = thisMaxSpeedCoreCount + "P"; // TODO: Maybe add some indication if P cores are also HT?
+                            if (!detectedPerformanceCores) { // "Performance" cores will always be first in the sorted "cpuCoreMaxSpeeds" list.
+                                cpuCoresSpeedsString = thisMaxSpeedCoreCount + ((cpuThreadsPerCore.equals("1")) ? "" : "HT") + "P"; // If there is any hyperthreading, it'll only be on the "Performance" cores.
+                                detectedPerformanceCores = true;
+                            } else if (!detectedEfficientCores) {
+                                cpuCoresSpeedsString += " + " + thisMaxSpeedCoreCount + "E";
+                                detectedEfficientCores = true;
                             } else {
-                                cpuPandEcoresString += " + " + thisMaxSpeedCoreCount + "E";
+                                cpuCoresSpeedsString += " + " + thisMaxSpeedCoreCount + "LPE"; // If there are more than 2 tiers of cores, assume the lowest tier is "Low Power Efficient" cores.
                             }
 
                             if (!thisMaxSpeedString.equals("0")) {
-                                try {
-                                    String thisMaxGHzString = new DecimalFormat("#.#").format((Double.parseDouble(thisMaxSpeedString) / 1000)) + " GHz Max";
-                                    if (!thisMaxGHzString.startsWith("0 ")) {
-                                        cpuPandEcoresString += " @ " + thisMaxGHzString;
-                                    }
-                                } catch (NumberFormatException thisCoreMaxMHzToGHzException) {
-                                    if (isTestMode) {
-                                        System.out.println("thisCoreMaxMHzToGHzException: " + thisCoreMaxMHzToGHzException);
-                                    }
+                                String thisMaxGHzString = thisMaxSpeedString + " GHz Max";
+                                if (!thisMaxGHzString.startsWith("0.") && !thisMaxGHzString.startsWith("1 ") && !thisMaxGHzString.startsWith("1.")) { // Some newer CPUs incorrectly show speed in the 0-1 GHz range which is not correct and confusing, so leave it off instead of displaying wrong info.
+                                    cpuCoresSpeedsString += " @ " + thisMaxGHzString;
                                 }
                             }
                         }
@@ -1029,10 +1047,11 @@ public final class GetComputerSpecs {
 
                                     boolean mmcIsEmbedded = false;
                                     if (thisDriveTransport.equals("mmc")) {
-                                        String mmcType = new CommandReader(new String[]{"/bin/udevadm", "info", "--query", "property", "--property", "MMC_TYPE", "--value", "-p", ("/sys/class/block/" + thisDriveFullID.replace("/dev/", ""))}).getFirstOutputLine();
-                                        if (mmcType.equals("MMC") || (mmcType.isEmpty() && !new CommandReader(new String[]{"/bin/udevadm", "info", "--query", "symlink", "-p", ("/sys/class/block/" + thisDriveFullID.replace("/dev/", ""))}).getFirstOutputLine().contains("/by-id/mmc-USD_"))) {
+                                        // "udevadm" is at "/sbin/udevadm" on Mint 19.3 and older, but is at "/usr/bin/udevadm" on at least Mint 20.2 and newer. maybe only after usrmerge.
+                                        String mmcType = new CommandReader(new String[]{(new File("/usr/bin/udevadm").exists() ? "/usr/bin/udevadm" : "/sbin/udevadm"), "info", "--query", "property", "--property", "MMC_TYPE", "--value", thisDriveFullID}).getFirstOutputLine();
+                                        if (mmcType.equals("MMC") || (mmcType.isEmpty() && !new CommandReader(new String[]{(new File("/usr/bin/udevadm").exists() ? "/usr/bin/udevadm" : "/sbin/udevadm"), "info", "--query", "property", "--property", "ID_PATH", "--value", thisDriveFullID}).getFirstOutputLine().contains("sdmmc"))) {
                                             // Only show eMMC which should have "MMC_TYPE" of "MMC" rather than "SD" (regular Memory Cards can still show as non-removable from "lsblk" though).
-                                            // Or, if "MMC_TYPE" doesn't exist (on older versions of "udevadm"?), eMMC should have some UDEV ID starting with other than "USD_" which would indicate an actual Memory Card.
+                                            // Or, if "MMC_TYPE" doesn't exist (on older versions of "udevadm"?), eMMC should have some "ID_PATH" not containing "sdmmc" which would indicate an actual Memory Card.
                                             mmcIsEmbedded = true;
                                         }
                                     }
@@ -1540,7 +1559,7 @@ public final class GetComputerSpecs {
                 }
 
                 if (hdSentinelBinaryTempPath != null) {
-                    String[] hdSentinelOutputLines = new CommandReader("printf '%s\\n' " + adminPasswordQuotedForShell + " | /usr/bin/sudo -Sk /usr/bin/timeout 15 '" + hdSentinelBinaryTempPath.replace("'", "'\\''") + "' -xml -r '" + hdSentinelOutputFile.getPath().replace("'", "'\\''") + "'").getOutputLines();
+                    String[] hdSentinelOutputLines = new CommandReader("printf '%s\\n' " + adminPasswordQuotedForShell + " | /usr/bin/sudo -Sk /usr/bin/timeout 15 '" + hdSentinelBinaryTempPath.replace("'", "'\\''") + "' -onlydevs '" + String.join(",", internalDriveLogicalNames).replace("'", "'\\''") + "' -xml -r '" + hdSentinelOutputFile.getPath().replace("'", "'\\''") + "'").getOutputLines();
                     String hdSentinelTextOutput = "";
 
                     for (String thisHdSentinelOutputLine : hdSentinelOutputLines) {
@@ -1581,7 +1600,27 @@ public final class GetComputerSpecs {
                                         hdSentinelTextOutput = hdSentinelTextOutput.replace(": " + thisDriveID + "\n", ": " + thisDriveID + " (INTERNAL)\n");
 
                                         if (!driveHealthWarning) {
+                                            // On 04/24/26, drive health checks changed FROM: Power On Time < 2500 days, Estimated Remaining Lifetime > 399 days, Description CONTAINS "is PERFECT", Tip IS "No actions needed."
+                                            // TO: Health Percentage >= 70%, Power On Time < 3000 days (Ignoring >= 10000 days as a false reading), Description CONTAINS "is PERFECT", Tip IS "No actions needed." OR "It is recommended to continuously monitor the hard disk status."
+
                                             Element parentDriveElement = (Element) thisNode.getParentNode();
+
+                                            NodeList driveHealthPercentageNodes = parentDriveElement.getElementsByTagName("Health");
+                                            if (driveHealthPercentageNodes != null && driveHealthPercentageNodes.getLength() > 0 && driveHealthPercentageNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
+                                                String driveHealthPercentageText = driveHealthPercentageNodes.item(0).getTextContent();
+
+                                                if (!driveHealthPercentageText.isEmpty() && !driveHealthPercentageText.equals("? %") && driveHealthPercentageText.contains(" %")) {
+                                                    try {
+                                                        if (Integer.parseInt(driveHealthPercentageText.replaceAll("[^0-9]", "")) < 70) {
+                                                            driveHealthWarning = true;
+                                                        }
+                                                    } catch (NumberFormatException driveHealthPercentageException) {
+                                                        if (isTestMode) {
+                                                            System.out.println("driveHealthPercentageException: " + driveHealthPercentageException);
+                                                        }
+                                                    }
+                                                }
+                                            }
 
                                             NodeList drivePowerOnTimeNodes = parentDriveElement.getElementsByTagName("Power_on_time");
                                             if (drivePowerOnTimeNodes != null && drivePowerOnTimeNodes.getLength() > 0 && drivePowerOnTimeNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
@@ -1589,7 +1628,8 @@ public final class GetComputerSpecs {
 
                                                 if (!drivePowerOnTimeText.isEmpty() && drivePowerOnTimeText.contains(" days")) {
                                                     try {
-                                                        if (Integer.parseInt(drivePowerOnTimeText.substring(0, drivePowerOnTimeText.indexOf(" days"))) >= 2500) {
+                                                        int drivePowerOnTimeDays = Integer.parseInt(drivePowerOnTimeText.substring(0, drivePowerOnTimeText.indexOf(" days")));
+                                                        if ((drivePowerOnTimeDays >= 3000) && (drivePowerOnTimeDays < 10000)) {
                                                             driveHealthWarning = true;
                                                         }
                                                     } catch (NumberFormatException drivePowerOnTimeException) {
@@ -1600,6 +1640,7 @@ public final class GetComputerSpecs {
                                                 }
                                             }
 
+                                            /* NOTE: Once a drive is over 5 years old (1,825 days Power On Time: https://www.hdsentinel.com/help/en/54_pot.html), HDSentinal sets the Estimated Remaining Lifetime days to the Health Percentage (ie. 70% == 70 days, 100% == "more than 100 days"), so checking both is basically redundant. And this also means that if we checked for a higher number of days it would essentially make the lowest Health Percentage check unreachable.
                                             NodeList driveEstimatedRemainingLifetimeNodes = parentDriveElement.getElementsByTagName("Estimated_remaining_lifetime");
                                             if (driveEstimatedRemainingLifetimeNodes != null && driveEstimatedRemainingLifetimeNodes.getLength() > 0 && driveEstimatedRemainingLifetimeNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
                                                 String driveEstimatedRemainingLifetimeText = driveEstimatedRemainingLifetimeNodes.item(0).getTextContent();
@@ -1609,7 +1650,7 @@ public final class GetComputerSpecs {
                                                         driveHealthWarning = true;
                                                     } else {
                                                         try {
-                                                            if (Integer.parseInt(driveEstimatedRemainingLifetimeText.substring(0, driveEstimatedRemainingLifetimeText.indexOf(" days")).replaceAll("[^0-9]", "")) < 400) {
+                                                            if (Integer.parseInt(driveEstimatedRemainingLifetimeText.substring(0, driveEstimatedRemainingLifetimeText.indexOf(" days")).replaceAll("[^0-9]", "")) < 70) {
                                                                 driveHealthWarning = true;
                                                             }
                                                         } catch (NumberFormatException driveEstimatedRemainingLifetimeException) {
@@ -1620,11 +1661,11 @@ public final class GetComputerSpecs {
                                                     }
                                                 }
                                             }
-
+                                             */
                                             NodeList driveDescriptionNodes = parentDriveElement.getElementsByTagName("Description");
                                             if (driveDescriptionNodes != null && driveDescriptionNodes.getLength() > 0 && driveDescriptionNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
                                                 String driveDescriptionText = driveDescriptionNodes.item(0).getTextContent();
-                                                if (!driveDescriptionText.isEmpty() && !driveDescriptionText.contains("is PERFECT.")) {
+                                                if (!driveDescriptionText.isEmpty() && !driveDescriptionText.toLowerCase().contains("is perfect.")) {
                                                     driveHealthWarning = true;
                                                 }
                                             }
@@ -1632,7 +1673,7 @@ public final class GetComputerSpecs {
                                             NodeList driveTipNodes = parentDriveElement.getElementsByTagName("Tip");
                                             if (driveTipNodes != null && driveTipNodes.getLength() > 0 && driveTipNodes.item(0).getParentNode().isSameNode(parentDriveElement)) {
                                                 String driveTipText = driveTipNodes.item(0).getTextContent();
-                                                if (!driveTipText.isEmpty() && !driveTipText.equals("No actions needed.")) {
+                                                if (!driveTipText.isEmpty() && !driveTipText.equals("No actions needed.") && !driveTipText.equals("It is recommended to continuously monitor the hard disk status.")) {
                                                     driveHealthWarning = true;
                                                 }
                                             }
@@ -1958,10 +1999,10 @@ public final class GetComputerSpecs {
                     // Hidden Devices can be viewed with Device Manager by enabling the "Show hidden devices" option in the View menu.
                     + "Write-Output 'Windows Hardware Info Class = " + (isWindowsPE ? "Win32_PnPEntity" : "Get-PnpDevice") + "';"
                     + (isWindowsPE
-                    ? "$pnpEntitiesWithVendorsAndDevices = Get-CimInstance Win32_PnPEntity -Filter \\\"DeviceID LIKE '%VEN_%DEV_%' OR DeviceID LIKE '%VID_%PID_%' OR Name LIKE '%touch screen%'\\\" -Property Name,DeviceID,CompatibleID;"
-                    : "$pnpEntitiesWithVendorsAndDevices = Get-PnpDevice | Where-Object { ($_.DeviceID -like '*VEN_*DEV_*') -or ($_.DeviceID -like '*VID_*PID_*') -or ($_.Name -like '*touch screen*') };")
+                    ? "$pnpEntitiesWithVendorsAndDevices = Get-CimInstance Win32_PnPEntity -Filter \\\"DeviceID LIKE '%VEN_%DEV_%' OR DeviceID LIKE '%VID_%PID_%' OR PNPClass = 'Camera' OR Name LIKE '%touch screen%'\\\" -Property Name,PNPClass,DeviceID,CompatibleID;"
+                    : "$pnpEntitiesWithVendorsAndDevices = Get-PnpDevice | Where-Object { ($_.DeviceID -like '*VEN_*DEV_*') -or ($_.DeviceID -like '*VID_*PID_*') -or ($_.PNPClass -eq 'Camera') -or ($_.Name -like '*touch screen*') };")
                     + "$pnpEntitiesWithVendorsAndDevices | ForEach-Object { foreach ($thisCompatibleID in $_.CompatibleID) { if ($thisCompatibleID.Contains('CC_') -or $thisCompatibleID.Contains('Class_')) { $_ | Add-Member CompatibleIDwithClass $thisCompatibleID; break } } };"
-                    + "$pnpEntitiesWithVendorsAndDevices | Format-List ConfigManagerErrorCode,Name,CompatibleIDwithClass,DeviceID;"
+                    + "$pnpEntitiesWithVendorsAndDevices | Format-List ConfigManagerErrorCode,Name,PNPClass,CompatibleIDwithClass,DeviceID;"
                     // Win32_Battery
                     + "Write-Output 'Windows Hardware Info Class = Win32_Battery';" // Some computers (ex. Lenovo G700, Lenovo G50) don't list any info in Win32_PortableBattery and barely any in Win32_Battery, but retrieving DesignVoltage seems to be reliable and the rest can come from the classes below.
                     + "Get-CimInstance Win32_Battery -Property DesignVoltage,EstimatedChargeRemaining | Format-List DesignVoltage,EstimatedChargeRemaining;"
@@ -2010,6 +2051,7 @@ public final class GetComputerSpecs {
                 String thisAudioManufacturer = "";
 
                 String pnpDeviceName = "";
+                String pnpClassName = "";
                 String pnpDeviceConfigManagerErrorCode = "";
                 String pnpDeviceCompatibleIDwithClass = "";
 
@@ -2078,7 +2120,7 @@ public final class GetComputerSpecs {
                                         } else if (thisWindowsHardwareInfoLine.startsWith("IdentifyingNumber")) {
                                             serial = thisWindowsHardwareInfoProperty;
                                         } else if (thisWindowsHardwareInfoLine.startsWith("UUID")) {
-                                            biosUUID = thisWindowsHardwareInfoProperty.toUpperCase();
+                                            hardwareUUID = thisWindowsHardwareInfoProperty.toUpperCase();
                                         }
                                     }
 
@@ -2393,7 +2435,7 @@ public final class GetComputerSpecs {
                                                     // This code and info is based on: https://stackoverflow.com/a/74172144
 
                                                     int pCoresCount = (cpuThreadCount - cpuCoreCount);
-                                                    cpuPandEcoresString = pCoresCount + "P + " + (cpuThreadCount - (pCoresCount * 2)) + "E";
+                                                    cpuCoresSpeedsString = pCoresCount + "P + " + (cpuThreadCount - (pCoresCount * 2)) + "E";
                                                 }
                                             } catch (NumberFormatException getPandEcoresException) {
                                                 if (isTestMode) {
@@ -2651,6 +2693,12 @@ public final class GetComputerSpecs {
                                         pnpDeviceName = cleanDeviceModel(thisWindowsHardwareInfoProperty);
                                         if (pnpDeviceName.contains("touch screen") && !pnpDeviceConfigManagerErrorCode.equals("CM_PROB_PHANTOM")) {
                                             hasTouchscreen = true; // Ignore PHANTOM (Error Code 45) touch screens because it means an external touch screen was connected but isn't anymore.
+                                        }
+                                    } else if (thisWindowsHardwareInfoLine.startsWith("PNPClass")) {
+                                        pnpClassName = cleanDeviceModel(thisWindowsHardwareInfoProperty);
+                                        if (pnpClassName.equals("Camera") && !pnpDeviceConfigManagerErrorCode.equals("CM_PROB_PHANTOM")) {
+                                            hasCamera = true;
+                                            hasScreen = true; // Assume any connected Camera means there's a built-in screen as well (because some All-in-Ones don't use the correct Chassis Type).
                                         }
                                     } else if (thisWindowsHardwareInfoLine.startsWith("CompatibleIDwithClass")) {
                                         pnpDeviceCompatibleIDwithClass = thisWindowsHardwareInfoProperty;
@@ -3273,6 +3321,8 @@ public final class GetComputerSpecs {
                                 } else if (macModelIdentifierNumber.isEmpty() && thisMacHardwareInfoLine.startsWith("      Model Identifier:")) {
                                     macModelIdentifier = thisMacHardwareInfoProperty;
                                     macModelIdentifierNumber = macModelIdentifier.replaceAll("[^0-9,]", "");
+                                } else if (hardwareUUID.equals("N/A") && thisMacHardwareInfoLine.startsWith("      Hardware UUID:")) {
+                                    hardwareUUID = thisMacHardwareInfoProperty;
                                 } else if (cpu.equals("N/A") && thisMacHardwareInfoLine.startsWith("      Chip:")) {
                                     cpu = thisMacHardwareInfoProperty; // This will only be available when running on Apple Silicon.
                                 } else if (cpuCurrentSpeedString.isEmpty() && thisMacHardwareInfoLine.startsWith("      Processor Speed:")) {
@@ -3283,15 +3333,17 @@ public final class GetComputerSpecs {
                                     cpuCores = thisMacHardwareInfoProperty;
 
                                     if (cpuCores.contains(" (")) {
-                                        // "Total Number of Cores" when running on Apple Silicon could be shown like: "8 (4 performance and 4 efficiency)"
+                                        // "Total Number of Cores" when running on Apple Silicon could be shown like: "8 (4 performance and 4 efficiency)" (P and E are capitalized as on 26.3, so toLower before replacements)
+                                        // As of M5 chips, there are also "Super" cores which could be paired with either "Performance" or "Efficiency" cores.
                                         String[] cpuCoresParts = cpuCores.split(" \\(");
                                         cpuCores = cpuCoresParts[0];
-                                        cpuPandEcoresString = cpuCoresParts[1].replace(" performance", "P").replace(" and ", " + ").replace(" efficiency", "E").replace(")", "");
+                                        cpuCoresSpeedsString = cpuCoresParts[1].toLowerCase().replace(" super", "S").replace(" performance", "P").replace(" efficiency", "E").replace(" and ", " + ").replace(")", "");
 
-                                        // The following Performance and Efficiency core MHz Max speeds are from the following blog post: https://eclecticlight.co/2025/10/30/updated-cpu-core-frequencies-for-all-current-apple-silicon-macs/
-                                        // The information in this post is collected from running "sudo powermetrics -n 1 -s cpu_power" on each CPU by Howard Oakley and other contributors (https://eclecticlight.co/2025/10/28/updating-cpu-frequencies-for-apple-silicon-macs/).
+                                        // The following Super, Performance, and Efficiency core MHz Max speeds are from the following blog post: https://eclecticlight.co/2026/04/13/cpu-core-frequencies-updated-for-all-current-apple-silicon-macs/
+                                        // The information in this post is collected from running "sudo powermetrics -n 1 -s cpu_power" on each CPU by Howard Oakley and other contributors (https://eclecticlight.co/2025/10/28/updating-cpu-frequencies-for-apple-silicon-macs/ & https://eclecticlight.co/2026/04/09/please-help-update-cpu-frequencies-for-apple-silicon-macs/).
                                         // Since the "powermetrics" command requires "sudo" and takes a few seconds to run, its simpler to hard code these values since they are static for each Apple Silicon model.
-                                        // Apple Silicon Cores Max MHz Last Updated: 10/30/25
+                                        // Apple Silicon Cores Max MHz Last Updated: 4/13/26
+                                        double sCoresMaxMHz = 0;
                                         double pCoresMaxMHz = 0;
                                         double eCoresMaxMHz = 0;
                                         switch (cpu) {
@@ -3356,32 +3408,52 @@ public final class GetComputerSpecs {
                                                 eCoresMaxMHz = 2592;
                                                 break;
                                             case "Apple M5":
-                                                pCoresMaxMHz = 4608;
+                                                sCoresMaxMHz = 4608;
                                                 eCoresMaxMHz = 3048;
+                                                break;
+                                            case "Apple M5 Pro":
+                                                sCoresMaxMHz = 4608;
+                                                pCoresMaxMHz = 4380;
+                                                break;
+                                            case "Apple M5 Max":
+                                                sCoresMaxMHz = 4608;
+                                                pCoresMaxMHz = 4380;
+                                                break;
+                                            case "Apple A18 Pro":
+                                                pCoresMaxMHz = 4044;
+                                                eCoresMaxMHz = 2424;
                                                 break;
                                             default:
                                                 break;
                                         }
 
+                                        if (sCoresMaxMHz > 0) {
+                                            String sCoresMaxGHzString = new DecimalFormat("#.#").format(sCoresMaxMHz / 1000) + " GHz Max";
+                                            cpuCoresSpeedsString = cpuCoresSpeedsString.replace("S", ("S @ " + sCoresMaxGHzString));
+                                        }
+
                                         if (pCoresMaxMHz > 0) {
                                             String pCoresMaxGHzString = new DecimalFormat("#.#").format(pCoresMaxMHz / 1000) + " GHz Max";
-                                            cpuPandEcoresString = cpuPandEcoresString.replace("P", ("P @ " + pCoresMaxGHzString));
+                                            cpuCoresSpeedsString = cpuCoresSpeedsString.replace("P", ("P @ " + pCoresMaxGHzString));
                                         }
 
                                         if (eCoresMaxMHz > 0) {
                                             String eCoresMaxGHzString = new DecimalFormat("#.#").format(eCoresMaxMHz / 1000) + " GHz Max";
-                                            cpuPandEcoresString = cpuPandEcoresString.replace("E", ("E @ " + eCoresMaxGHzString));
+                                            cpuCoresSpeedsString = cpuCoresSpeedsString.replace("E", ("E @ " + eCoresMaxGHzString));
                                         }
                                     }
                                 } else if (ram.equals("N/A") && thisMacHardwareInfoLine.startsWith("      Memory:")) {
                                     ram = thisMacHardwareInfoProperty;
                                 } else if (serial.equals("N/A") && thisMacHardwareInfoLine.startsWith("      Serial Number (system):")) {
                                     serial = thisMacHardwareInfoProperty;
-                                    if (serial.equals("Not Available")) {
+                                    if (serial.endsWith("vailable")) { // In "system_profiler", Macs without a serial number will show as "Unavailable" on macOS 11 Big Sur and newer and as "Not Available" on macOS 10.15 Catalina and older.
                                         serial = "N/A";
                                     }
                                 } else if (processorTraySerial.equals("N/A") && thisMacHardwareInfoLine.startsWith("      Serial Number (processor tray):")) {
                                     processorTraySerial = thisMacHardwareInfoProperty.trim();
+                                    if (processorTraySerial.endsWith("vailable")) {
+                                        processorTraySerial = "N/A";
+                                    }
                                 }
 
                                 break;
@@ -3726,8 +3798,12 @@ public final class GetComputerSpecs {
                         // For some strange reason, detailed Bluetooth information no longer exists in Monterey, can only detect if it is present.
                         // BUT, I wrote a script (https://github.com/freegeek-pdx/macOS-Testing-and-Deployment-Scripts/blob/main/Other%20Scripts/get_bluetooth_from_all_mac_specs_pages.sh) to extract every Bluetooth version from every specs URL to be able to know what version this model has if Bluetooth is detected.
 
-                        // Bluetooth Model IDs Last Updated: 10/27/25
-                        if (Arrays.asList("Mac14,2", "Mac14,3", "Mac14,5", "Mac14,6", "Mac14,8", "Mac14,9", "Mac14,10", "Mac14,12", "Mac14,13", "Mac14,14", "Mac14,15", "Mac15,3", "Mac15,4", "Mac15,5", "Mac15,6", "Mac15,7", "Mac15,8", "Mac15,9", "Mac15,10", "Mac15,11", "Mac15,12", "Mac15,13", "Mac15,14", "Mac16,1", "Mac16,2", "Mac16,3", "Mac16,5", "Mac16,6", "Mac16,7", "Mac16,8", "Mac16,9", "Mac16,10", "Mac16,11", "Mac16,12", "Mac16,13", "Mac17,2").contains(macModelIdentifier)) {
+                        // Bluetooth Model IDs Last Updated: 04/02/26
+                        if (Arrays.asList("Mac17,3", "Mac17,4", "Mac17,5", "Mac17,6", "Mac17,7", "Mac17,8", "Mac17,9").contains(macModelIdentifier)) {
+                            thisBluetoothInfo += " 6";
+                            bluetoothLE = true;
+                            bluetoothHandoff = true;
+                        } else if (Arrays.asList("Mac14,2", "Mac14,3", "Mac14,5", "Mac14,6", "Mac14,8", "Mac14,9", "Mac14,10", "Mac14,12", "Mac14,13", "Mac14,14", "Mac14,15", "Mac15,3", "Mac15,4", "Mac15,5", "Mac15,6", "Mac15,7", "Mac15,8", "Mac15,9", "Mac15,10", "Mac15,11", "Mac15,12", "Mac15,13", "Mac15,14", "Mac16,1", "Mac16,2", "Mac16,3", "Mac16,5", "Mac16,6", "Mac16,7", "Mac16,8", "Mac16,9", "Mac16,10", "Mac16,11", "Mac16,12", "Mac16,13", "Mac17,2").contains(macModelIdentifier)) {
                             thisBluetoothInfo += " 5.3";
                             bluetoothLE = true;
                             bluetoothHandoff = true;
@@ -3780,12 +3856,12 @@ public final class GetComputerSpecs {
                         double maxCapacity = 0;
                         double designCapacity = 0;
                         for (String thisBatteryCapacityLine : batteryCapacityLines) {
-                            if (maxCapacity == 0 && thisBatteryCapacityLine.startsWith("      \"MaxCapacity\" = ")) {
+                            if (maxCapacity == 0 && thisBatteryCapacityLine.contains("\"MaxCapacity\" = ")) {
                                 // "MaxCapacity" will always be "100" on Apple Silicon, use "AppleRawMaxCapacity" instead (but still checking both because I'm not sure when/if "AppleRawMaxCapacity" is unavailable).
                                 maxCapacity = Double.parseDouble(thisBatteryCapacityLine.substring(thisBatteryCapacityLine.indexOf(" = ") + 3));
-                            } else if ((maxCapacity == 0 || maxCapacity == 100) && thisBatteryCapacityLine.startsWith("      \"AppleRawMaxCapacity\" = ")) {
+                            } else if ((maxCapacity == 0 || maxCapacity == 100) && thisBatteryCapacityLine.contains("\"AppleRawMaxCapacity\" = ")) {
                                 maxCapacity = Double.parseDouble(thisBatteryCapacityLine.substring(thisBatteryCapacityLine.indexOf(" = ") + 3));
-                            } else if (designCapacity == 0 && thisBatteryCapacityLine.startsWith("      \"DesignCapacity\" = ")) {
+                            } else if (designCapacity == 0 && thisBatteryCapacityLine.contains("\"DesignCapacity\" = ")) {
                                 designCapacity = Double.parseDouble(thisBatteryCapacityLine.substring(thisBatteryCapacityLine.indexOf(" = ") + 3));
                             }
                         }
@@ -3977,7 +4053,7 @@ public final class GetComputerSpecs {
 
                 // Laptop Power Adapter Info for Mac - https://support.apple.com/HT201700
                 // BUT, I wrote a script (https://github.com/freegeek-pdx/macOS-Testing-and-Deployment-Scripts/blob/main/Other%20Scripts/get_power_adapters_from_all_mac_specs_pages.sh) to extract every Power Adapter for each Model ID from every specs URL from the Model pages linked here: https://support.apple.com/HT213325
-                // Power Adapter Model IDs Last Updated: 10/27/25
+                // Power Adapter Model IDs Last Updated: 04/02/26
                 if (Arrays.asList("MacBookPro1,1", "MacBookPro1,2", "MacBookPro2,1", "MacBookPro2,2", "MacBookPro3,1", "MacBookPro4,1", "MacBookPro5,1", "MacBookPro5,2", "MacBookPro5,3", "MacBookPro6,1", "MacBookPro6,2", "MacBookPro8,2", "MacBookPro8,3", "MacBookPro9,1").contains(macModelIdentifier)) {
                     powerAdapter = "85W MagSafe 1";
                 } else if (Arrays.asList("MacBook1,1", "MacBook2,1", "MacBook3,1", "MacBook4,1", "MacBook5,1", "MacBook5,2", "MacBook6,1", "MacBook7,1", "MacBookPro5,4", "MacBookPro5,5", "MacBookPro7,1", "MacBookPro8,1", "MacBookPro9,2").contains(macModelIdentifier)) {
@@ -4002,16 +4078,20 @@ public final class GetComputerSpecs {
                     powerAdapter = "30W USB-C";
                 } else if (Arrays.asList("MacBook8,1", "MacBook9,1").contains(macModelIdentifier)) {
                     powerAdapter = "29W USB-C";
-                } else if (Arrays.asList("Mac14,6", "Mac14,10", "Mac15,7", "Mac15,9", "Mac15,11", "Mac16,5", "Mac16,7", "MacBookPro18,1", "MacBookPro18,2").contains(macModelIdentifier)) {
+                } else if (Arrays.asList("Mac17,5").contains(macModelIdentifier)) {
+                    powerAdapter = "20W USB-C";
+                } else if (Arrays.asList("Mac14,6", "Mac14,10", "Mac15,7", "Mac15,9", "Mac15,11", "Mac16,5", "Mac16,7", "Mac17,6", "Mac17,8", "MacBookPro18,1", "MacBookPro18,2").contains(macModelIdentifier)) {
                     powerAdapter = "140W USB-C/MagSafe 3";
                 } else if (Arrays.asList("Mac14,5", "Mac14,9", "MacBookPro18,3", "MacBookPro18,4").contains(macModelIdentifier)) {
                     powerAdapter = "67W or 96W USB-C/MagSafe 3";
+                } else if (Arrays.asList("Mac15,3", "Mac15,6", "Mac15,8", "Mac15,10", "Mac16,1", "Mac16,6", "Mac16,8", "Mac17,2", "Mac17,7", "Mac17,9").contains(macModelIdentifier)) {
+                    powerAdapter = "70W or 96W USB-C/MagSafe 3";
                 } else if (Arrays.asList("Mac14,2", "Mac15,12", "Mac16,12").contains(macModelIdentifier)) {
                     powerAdapter = "30W or 35W Dual Port or 70W USB-C/MagSafe 3";
                 } else if (Arrays.asList("Mac14,15", "Mac15,13", "Mac16,13").contains(macModelIdentifier)) {
                     powerAdapter = "35W Dual Port or 70W USB-C/MagSafe 3";
-                } else if (Arrays.asList("Mac15,3", "Mac15,6", "Mac15,8", "Mac15,10", "Mac16,1", "Mac16,6", "Mac16,8", "Mac17,2").contains(macModelIdentifier)) {
-                    powerAdapter = "70W or 96W USB-C/MagSafe 3";
+                } else if (Arrays.asList("Mac17,3", "Mac17,4").contains(macModelIdentifier)) {
+                    powerAdapter = "35W Dual Port or 40W (with 60W Max) or 70W USB-C/MagSafe 3";
                 }
 
                 if (systemProductName.equals("N/A")) {
@@ -4578,7 +4658,7 @@ public final class GetComputerSpecs {
                 cpuModelSpeedGHz = cpuCurrentSpeedGHz;
             }
 
-            if (cpuPandEcoresString.contains("@")) { // If "cpuPandEcoresString" contains Max speeds for P+E cores, DO NOT show an overall Max speed for the CPU.
+            if (cpuCoresSpeedsString.contains("@")) { // If "cpuCoresSpeedsString" contains Max speeds for P+E cores, DO NOT show an overall Max speed for the CPU.
                 cpuMaxSpeedGHz = cpuModelSpeedGHz;
             }
 
@@ -4592,31 +4672,31 @@ public final class GetComputerSpecs {
                 cpuCurrentSpeedGHz = cpuMaxSpeedGHz;
             }
 
-            String cpuSpeedsString = "";
+            ArrayList<String> cpuSpeedsStringParts = new ArrayList<>();
 
-            if (cpuModelSpeedGHz > 0.0) {
-                cpuSpeedsString = new DecimalFormat("#.#").format(cpuModelSpeedGHz) + " GHz";
+            if (!isMacOS && (cpuModelSpeedGHz >= 2.0)) { // On Linux, the "cpuModelSpeedGHz" may be incorrectly something like "0.8 GHz" for modern Intel processors with P and E cores and "cpuCoresSpeedsString" may contain the true Max speeds. If so, don't show the incorrect base speed.
+                cpuSpeedsStringParts.add(new DecimalFormat("#.#").format(cpuModelSpeedGHz) + " GHz" + (cpuModelSpeedIsMaxSpeed ? " Max" : "")); // Intel 12th Gen and newer DO NOT list a model (base) speed, so we can only show the Max speed and want to label it as such.
+            }
 
+            if (!cpuModelSpeedIsMaxSpeed) {
                 double cpuModelVsCurrentSpeedGHzDifference = Math.abs(cpuModelSpeedGHz - cpuCurrentSpeedGHz);
-                double cpuCurrentVsMaxSpeedGHzDifference = Math.abs(cpuCurrentSpeedGHz - cpuMaxSpeedGHz);
                 double cpuModelVsMaxSpeedGHzDifference = Math.abs(cpuModelSpeedGHz - cpuMaxSpeedGHz);
                 double cpuSpeedDifferenceThreshold = 0.35; // Only show difference CPU speeds if they are at least this far from eachother.
 
-                if (cpuModelVsMaxSpeedGHzDifference >= cpuSpeedDifferenceThreshold) {
-                    if ((cpuModelVsCurrentSpeedGHzDifference >= cpuSpeedDifferenceThreshold) && (cpuCurrentVsMaxSpeedGHzDifference >= cpuSpeedDifferenceThreshold)) {
-                        cpuSpeedsString += " / " + new DecimalFormat("#.#").format(cpuCurrentSpeedGHz) + " GHz / " + new DecimalFormat("#.#").format(cpuMaxSpeedGHz) + " GHz Max";
-                    } else {
-                        cpuSpeedsString += " / " + new DecimalFormat("#.#").format(cpuMaxSpeedGHz) + " GHz Max";
-                    }
-                } else if (cpuModelVsCurrentSpeedGHzDifference >= cpuSpeedDifferenceThreshold) {
-                    cpuSpeedsString += " / " + new DecimalFormat("#.#").format(cpuCurrentSpeedGHz) + " GHz";
-                } else if (cpuModelSpeedIsMaxSpeed) { // Intel 12th Gen and newer DO NOT list a model (base) speed, so we can only show the Max speed and want to label it as such.
-                    cpuSpeedsString += " Max";
+                if (((cpuMaxSpeedGHz >= 2.0) && (cpuModelVsMaxSpeedGHzDifference >= cpuSpeedDifferenceThreshold))
+                        && ((cpuCurrentSpeedGHz >= 2.0) && (cpuModelVsCurrentSpeedGHzDifference >= cpuSpeedDifferenceThreshold))
+                        && (Math.abs(cpuCurrentSpeedGHz - cpuMaxSpeedGHz) >= cpuSpeedDifferenceThreshold)) {
+                    cpuSpeedsStringParts.add(new DecimalFormat("#.#").format(cpuCurrentSpeedGHz) + " GHz");
+                    cpuSpeedsStringParts.add(new DecimalFormat("#.#").format(cpuMaxSpeedGHz) + " GHz Max");
+                } else if ((cpuMaxSpeedGHz >= 2.0) && (cpuModelVsMaxSpeedGHzDifference >= cpuSpeedDifferenceThreshold)) {
+                    cpuSpeedsStringParts.add(new DecimalFormat("#.#").format(cpuMaxSpeedGHz) + " GHz Max");
+                } else if ((cpuCurrentSpeedGHz >= 2.0) && (cpuModelVsCurrentSpeedGHzDifference >= cpuSpeedDifferenceThreshold)) {
+                    cpuSpeedsStringParts.add(new DecimalFormat("#.#").format(cpuCurrentSpeedGHz) + " GHz");
                 }
             }
 
-            if (!cpuSpeedsString.isEmpty() && (!cpuPandEcoresString.contains("@") || !cpuSpeedsString.startsWith("0."))) { // On Linux, the "cpuSpeedsString" may be incorrectly something like "0.8 GHz" for modern Intel processors with P and E cores and "cpuPandEcoresString" may contain the true Max speeds. If so, don't show the incorrect base speed.
-                cpu += " @ " + cpuSpeedsString;
+            if (!cpuSpeedsStringParts.isEmpty() && !cpuCoresSpeedsString.contains("@")) {
+                cpu += " @ " + String.join(" / ", cpuSpeedsStringParts);
             }
 
             if (!cpuCount.isEmpty()) {
@@ -4643,13 +4723,15 @@ public final class GetComputerSpecs {
             }
 
             if (!cpuCores.isEmpty()) {
-                cpu += " (" + cpuCores + " Core" + (cpuCores.equals("1") ? "" : "s");
+                String cpuCoresPart = cpuCores + " Core" + (cpuCores.equals("1") ? "" : "s");
 
-                if (!cpuPandEcoresString.isEmpty()) {
-                    cpu += " - " + cpuPandEcoresString;
+                if (!cpuCoresSpeedsString.isEmpty()) {
+                    cpuCoresPart += " - " + cpuCoresSpeedsString;
                 } else if (cpuThreadCount > 0) {
                     try {
-                        cpu += ((cpuThreadCount > Integer.parseInt(cpuCores)) ? " + HT" : "");
+                        if (cpuThreadCount > Integer.parseInt(cpuCores)) {
+                            cpuCoresPart = cpuCoresPart.replace(" Core", " HT Core");
+                        }
                     } catch (NumberFormatException cpuCoresException) {
                         if (isTestMode) {
                             System.out.println("cpuCoresException: " + cpuCoresException);
@@ -4657,7 +4739,7 @@ public final class GetComputerSpecs {
                     }
                 }
 
-                cpu += ")";
+                cpu += " (" + cpuCoresPart + ")";
             }
 
             if (!cpuBrand.isEmpty() && !cpu.contains(cpuBrand)) {
@@ -5534,8 +5616,8 @@ public final class GetComputerSpecs {
         return fullMotherboardSerial;
     }
 
-    public String getBiosUUID() {
-        return biosUUID;
+    public String getHardwareUUID() {
+        return hardwareUUID;
     }
 
     public boolean getSerialIsMAC() {
@@ -5789,7 +5871,7 @@ public final class GetComputerSpecs {
         System.out.println("Motherboard Serial: " + fullMotherboardSerial);
         System.out.println("Serial Is MAC: " + (serialIsMAC ? "Yes" : "No"));
         System.out.println("MAC: " + getEthernetMAC());
-        System.out.println("BIOS UUID: " + biosUUID);
+        System.out.println("Hardware UUID: " + hardwareUUID);
 
         System.out.println("");
         System.out.println("CPU: " + fullCPU);

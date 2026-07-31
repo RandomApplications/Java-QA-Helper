@@ -4,7 +4,7 @@
 #
 # Created by Pico Mitchell (of Free Geek) on 02/22/19
 # For QA Helper
-# Last Updated: 11/3/25
+# Last Updated: 02/25/26
 #
 # MIT License
 #
@@ -40,13 +40,9 @@ echo 'RUNNING INSTALL QA HELPER'
 
 if [[ "${MODE}" == 'test' || "${MODE}" == 'testing' ]]; then
 	FORCE_UPDATE=true
-	if ping 'tools.freegeek.org' -W 2 -c 1 &> /dev/null; then
-		DOWNLOAD_URL='http://tools.freegeek.org/qa-helper/download'
-		TEST_MODE=true
-		echo 'MODE SET: Install Latest TEST Version'
-	else
-		echo 'TEST MODE NOT SET - Local Free Geek Network Required - SETTING UPDATE MODE INSTEAD'
-	fi
+	DOWNLOAD_URL='https://apps-test.freegeek.org/qa-helper/download'
+	TEST_MODE=true
+	echo 'MODE SET: Install Latest TEST Version'
 elif [[ "${MODE}" == 'update' ]]; then
 	FORCE_UPDATE=true
 	echo 'MODE SET: Update to Latest Live Version'
@@ -220,7 +216,7 @@ else # Installer for Linux
 			if [[ -e "${install_dir}/java-jre/bin/java" ]]; then
 				echo -e '\n\nJAVA IS ALREADY INSTALLED\n'
 			else
-				jdk_version='25.0.1+8'
+				jdk_version='25.0.2+10'
 
 				echo -e "\n\nINSTALLING JAVA ${jdk_version/_/+}...\n"
 

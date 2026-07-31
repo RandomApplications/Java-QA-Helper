@@ -1,7 +1,7 @@
 #
 # Created by Pico Mitchell (of Free Geek) on 08/23/19
 # For QA Helper
-# Last Updated: 11/3/25
+# Last Updated: 02/25/26
 #
 # MIT License
 #
@@ -38,12 +38,8 @@ Write-Host "`n  Successfully Loaded QA Helper Installer" -ForegroundColor Green
 
 if (($Mode -eq 'test') -or ($Mode -eq 'testing')) {
 	$forceUpdate = $true
-	if (Test-Connection 'tools.freegeek.org' -Count 1 -Quiet) {
-		$downloadURL = 'http://tools.freegeek.org/qa-helper/download'
-		Write-Host "`n  MODE SET: Install Latest TEST Version" -ForegroundColor Yellow
-	} else {
-		Write-Host "`n  TEST MODE NOT SET - Local Free Geek Network Required - SETTING UPDATE MODE INSTEAD" -ForegroundColor Yellow
-	}
+	$downloadURL = 'https://apps-test.freegeek.org/qa-helper/download'
+	Write-Host "`n  MODE SET: Install Latest TEST Version" -ForegroundColor Yellow
 } elseif ($Mode -eq 'update') {
 	$forceUpdate = $true
 	Write-Host "`n  MODE SET: Update to Latest Live Version" -ForegroundColor Yellow
@@ -242,7 +238,7 @@ if (-not $uninstall) {
 		if (Test-Path "$installPath\java-jre\bin\javaw.exe") {
 			Write-Host "`n`n  SKIPPING JAVA INSTALLATION: Java Was Already Installed" -ForegroundColor Yellow
 		} else {
-			$jdkVersion = '25.0.1+8'
+			$jdkVersion = '25.0.2+10'
 
 			Write-Output "`n`n  Installing Java $($jdkVersion.Replace('_', '+')):"
 			
